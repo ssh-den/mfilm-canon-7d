@@ -57,8 +57,6 @@ for a try on a computer that can't, with those films' colour mixed from their lo
   makes none itself, so `js/camera.js` puts a film's table on the card when a
   roll of it is loaded, and developing waits for it on a slow connection.
 - `js/liveview.js` is what the sensor sees, and the photo each frame is made from.
-- `js/download.js` is the download: camera, pay what you want (US$0–99). Over $0 it asks the Darkrooms
-  licence server (`/v1/donate`) for a Stripe Checkout page of that amount; Stripe comes back with `?thanks=1`.
-  Its camera list follows `ml-dev/cameras.txt`.
+- `js/download.js` selects camera ZIPs from upstream M-Film releases.
 - `install.html` / `js/install.js`: installing, step by step, for the camera picked there.
 - `js/main.js` wires the buttons, the dial, the keyboard and the guide; `js/i18n.js` has the English and Thai.

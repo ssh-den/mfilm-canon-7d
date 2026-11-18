@@ -26,7 +26,6 @@
     <a href="#cameras" data-i18n="nav.cameras">Cameras</a>
     <a href="install.html" data-i18n="nav.install">Install</a>
     <a href="#faq" data-i18n="nav.faq">FAQ</a>
-    <a href="#darkrooms">Darkrooms</a>
     <button class="lang" type="button" aria-label="ภาษาไทย / English">TH</button>
     <a class="btn small" href="#download" data-download data-i18n="nav.download">Download</a>
   </nav>
@@ -99,7 +98,7 @@
   <div class="how-grid">
     <div><span class="num">1</span><b data-i18n="how.1.t">Load a roll</b><p data-i18n="how.1.d">A shelf of 68 canisters. Pick a film and 36, 24 or 12 frames; the camera sets itself up for it.</p></div>
     <div><span class="num">2</span><b data-i18n="how.2.t">Shoot blind</b><p data-i18n="how.2.d">No picture after each shot and no going back through them: an SLR's viewfinder, a meter needle and a frame counter.</p></div>
-    <div><span class="num">3</span><b data-i18n="how.3.t">Develop the roll</b><p data-i18n="how.3.d">In the camera's own darkroom, or on your computer with Darkrooms. Then see what you got.</p></div>
+    <div><span class="num">3</span><b data-i18n="how.3.t">Develop the roll</b><p data-i18n="how.3.d">In the camera's own darkroom. Then see what you got.</p></div>
   </div>
 </section>
 
@@ -126,32 +125,6 @@
     <a class="link" href="https://github.com/HNGSeries/mfilm-canon-film-simulation/blob/main/TESTING.md">TESTING.md →</a></p>
 </section>
 
-<section id="darkrooms" class="band dr">
-  <div class="dr-head">
-    <div>
-      <h2 data-i18n="dr.t">Develop on your computer: Darkrooms</h2>
-      <p data-i18n="dr.d">The camera develops its rolls by itself, slowly. Darkrooms does it on your computer, fast: plug the camera in (or put its card in a reader) and every roll is there, developed at full resolution.</p>
-      <div class="os-links" id="dr-links">
-        <a class="btn" data-os="windows" href="https://github.com/HNGSeries/mfilm-canon-film-simulation/releases?q=Darkrooms&amp;expanded=true">Windows</a>
-        <a class="btn ghost" data-os="apple-silicon" href="https://github.com/HNGSeries/mfilm-canon-film-simulation/releases?q=Darkrooms&amp;expanded=true">Mac · Apple silicon</a>
-        <a class="btn ghost" data-os="intel" href="https://github.com/HNGSeries/mfilm-canon-film-simulation/releases?q=Darkrooms&amp;expanded=true">Mac · Intel</a>
-      </div>
-      <p class="muted small" id="dr-version" data-i18n="dr.unsigned">Not signed with Microsoft or Apple yet: the first time, Windows says More info → Run anyway; a Mac, Privacy &amp; Security → Open Anyway.</p>
-    </div>
-    <div class="prices">
-      <div class="price"><b data-i18n="p.free">Free</b><span data-i18n="p.free.d">one roll a day, up to 36 frames, with a Google account</span></div>
-      <div class="price"><b>US$2.99</b><span data-i18n="p.month">a month: as many rolls as you like</span></div>
-      <div class="price best"><b>US$14.99</b><span data-i18n="p.once">once, for good</span></div>
-    </div>
-  </div>
-  <div class="shots">
-    <figure><img src="fos/app/app-rolls.jpg" alt="" loading="lazy"><figcaption data-i18n="dr.s1">Your rolls, each with its canister and a strip of its frames.</figcaption></figure>
-    <figure><img src="fos/app/app-darkroom.jpg" alt="" loading="lazy"><figcaption data-i18n="dr.s2">The lights go red. Prints come out of the developer and hang on the line.</figcaption></figure>
-    <figure><img src="fos/app/app-lights-on.jpg" alt="" loading="lazy"><figcaption data-i18n="dr.s3">Lights on: every roll gets a contact sheet and its own folder.</figcaption></figure>
-    <figure><img src="fos/app/app-develop.jpg" alt="" loading="lazy"><figcaption data-i18n="dr.s4">Every pixel of the RAW, EXIF kept, optional date stamp.</figcaption></figure>
-  </div>
-</section>
-
 <section id="download" class="band get">
   <h2 data-i18n="get.t">Put it on your camera</h2>
   <ol class="install">
@@ -169,7 +142,7 @@
   <h2 data-i18n="faq.t">Questions</h2>
   <details><summary data-i18n="faq.1.q">Can it break my camera?</summary><p data-i18n="faq.1.a">Magic Lantern runs from the card and changes nothing permanent in the camera. The worst that usually happens is that the camera doesn't start with the card in: take the battery and the card out, and it starts normally again. Still, it is software on your camera at your own risk: keep a charged battery, and don't try it in the middle of a shoot.</p></details>
   <details><summary data-i18n="faq.2.q">How do I go back to Canon's camera?</summary><p data-i18n="faq.2.a">Format the card in the camera. To stop the camera looking for Magic Lantern at all, run ML-SETUP.FIR again from Firmware ver. and remove the boot flag.</p></details>
-  <details><summary data-i18n="faq.3.q">Is it really free?</summary><p data-i18n="faq.3.a">The camera side is free and open source (GPL-2.0), and its darkroom is free and unlimited. You can pay what you want for the download, $0 included. Darkrooms, the desktop program, is free for a roll a day.</p></details>
+  <details><summary data-i18n="faq.3.q">Is it really free?</summary><p data-i18n="faq.3.a">The camera side is free and open source (GPL-2.0), and its darkroom is free and unlimited.</p></details>
   <details><summary data-i18n="faq.4.q">Can I shoot JPEG?</summary><p data-i18n="faq.4.a">Set Image quality to RAW (RAW+JPEG works too). The films are applied when the roll is developed, from the RAW: a frame shot as JPEG can't be developed.</p></details>
   <details><summary data-i18n="faq.5.q">How do I update to a new version?</summary><p data-i18n="faq.5.a">Finish and develop the roll, copy your photos off, format the card in the camera, unzip the new version onto it and run Firmware ver. → update again. Don't unzip a new version over the old one.</p></details>
   <details><summary data-i18n="faq.6.q">My camera isn't in the list.</summary><p data-i18n="faq.6.a">M-Film needs Magic Lantern, which is mature on DIGIC 4 and 5 cameras. On newer ones (200D, 80D, M50, the R series) Magic Lantern itself is still experimental.</p></details>
@@ -188,27 +161,8 @@
       </label>
       <p class="dl-note" id="dl-camera-note"></p>
 
-      <div class="field">
-        <span data-i18n="dl.price">Name your price</span>
-        <div class="price-pick">
-          <span class="cur">$</span>
-          <input id="dl-amount" type="number" inputmode="numeric" min="0" max="99" step="1" value="5" aria-label="Amount in US dollars">
-          <span class="cur-tail">USD</span>
-        </div>
-        <input id="dl-range" type="range" min="0" max="99" step="1" value="5" aria-label="Amount in US dollars">
-        <div class="presets">
-          <button type="button" data-amount="0">$0</button>
-          <button type="button" data-amount="3">$3</button>
-          <button type="button" data-amount="5" class="on">$5</button>
-          <button type="button" data-amount="10">$10</button>
-          <button type="button" data-amount="25">$25</button>
-        </div>
-        <p class="dl-note" data-i18n="dl.free">$0 is fine: M-Film is free and open source. Whatever you give keeps it going.</p>
-      </div>
-
-      <button type="button" class="btn dl-go" id="dl-go">Pay $5 and download</button>
-      <p class="dl-err" id="dl-err" role="alert"></p>
-      <p class="dl-small"><span data-i18n="dl.secure">Payment by Stripe. The download starts when you come back.</span>
+      <button type="button" class="btn dl-go" id="dl-go" data-i18n="dl.freeGo">Download for free</button>
+      <p class="dl-small">
         <a href="https://github.com/HNGSeries/mfilm-canon-film-simulation/releases/latest" data-i18n="dl.all">All files and release notes</a></p>
     </div>
 
@@ -239,7 +193,6 @@
       <a href="https://github.com/HNGSeries/mfilm-canon-film-simulation/issues/new/choose" data-i18n="foot.issue">Report a problem</a></div>
     <div><b data-i18n="foot.more">More</b>
       <a href="https://github.com/HNGSeries/mfilm-canon-film-simulation/blob/main/docs/MANUAL.th.md" data-i18n="foot.manual">Manual (Thai)</a>
-      <a href="https://darkrooms-licence.suphalapruksasathit.workers.dev/privacy" data-i18n="foot.privacy">Darkrooms privacy</a>
       <a href="https://buy.stripe.com/7sY14p8d93QE5Ny5M58so02" data-i18n="foot.coffee">Buy the developer a coffee</a></div>
     <div><b data-i18n="foot.follow">Follow</b>
       <a href="https://www.instagram.com/mfilm.official/">Instagram</a>

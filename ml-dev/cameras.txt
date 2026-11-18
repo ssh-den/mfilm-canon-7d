@@ -3,6 +3,7 @@
 #   status:   working  tried on the camera, works
 #             issues   tried on the camera, with a known problem (the note says which)
 #             testing  builds; waiting for someone to try it on the camera
+#             experimental  this fork's separately built test port
 #             planned  not started yet, but should be possible
 #             no       not for now: Magic Lantern itself is experimental there (DIGIC 6 and later)
 #   From 0.2 the film OS is a module on every camera (ML/modules/filmos.mo, loaded after boot:
@@ -29,7 +30,7 @@ EOSM.202      working   727072      Canon EOS M | From 0.2 the film OS loads as 
 500D.111      working         -           Canon EOS 500D / Rebel T1i / Kiss X3 | Works (#44). 0.1.5 repaints the plate when Canon draws over it, but a slight flicker remains; 0.1.6 puts the plate together off-screen and puts back only what Canon drew over: does it still flicker? (#64) From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | ใช้ได้ (#44) 0.1.5 วาดจอใหม่เมื่อ Canon วาดทับ แต่ยังกะพริบอยู่เล็กน้อย 0.1.6 ประกอบภาพฝาบนกล้องนอกจอก่อน แล้ววาดกลับเฉพาะแถวที่ Canon วาดทับ ยังกะพริบอยู่ไหม แจ้งได้ที่ #64 ตั้งแต่ 0.2 film OS โหลดเป็นโมดูลบนรุ่นนี้ด้วย (เหมือน 550D และ 650D) ยังไม่มีคนยืนยันบนรุ่นนี้ ลองแล้วแจ้งผลได้
 50D.109       working         -           Canon EOS 50D | Works (#43). 0.1.5 repaints the plate when Canon draws over it, but a slight flicker may remain, as on the 500D; 0.1.6 puts the plate together off-screen and puts back only what Canon drew over: reports wanted in #64. From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | ใช้ได้ (#43) 0.1.5 วาดจอใหม่เมื่อ Canon วาดทับ แต่อาจยังกะพริบอยู่เล็กน้อยเหมือนบน 500D 0.1.6 ประกอบภาพฝาบนกล้องนอกจอก่อน แล้ววาดกลับเฉพาะแถวที่ Canon วาดทับ รอรายงานใน #64 ตั้งแต่ 0.2 film OS โหลดเป็นโมดูลบนรุ่นนี้ด้วย (เหมือน 550D และ 650D) ยังไม่มีคนยืนยันบนรุ่นนี้ ลองแล้วแจ้งผลได้
 5D2.212       issues    -           Canon EOS 5D Mark II | Most hang at power on: the build is too big at start-up (#18). 0.1.3 has a smaller one (some Magic Lantern features left out, the darkroom kept) and fixes the pink prints: waiting for testers. From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | ส่วนใหญ่ค้างตอนเปิด เพราะ build ใหญ่เกินหน่วยความจำตอนบูต (#18) 0.1.3 มี build ที่เล็กลง (ตัดบางฟีเจอร์ของ Magic Lantern ออก แต่ห้องมืดยังอยู่) และแก้รูปสีชมพู รอคนลอง ตั้งแต่ 0.2 film OS โหลดเป็นโมดูลบนรุ่นนี้ด้วย (เหมือน 550D และ 650D) ยังไม่มีคนยืนยันบนรุ่นนี้ ลองแล้วแจ้งผลได้
-7D.203        no        -           Canon EOS 7D (Magic Lantern's current source doesn't build it)
+7D.206        experimental -        Canon EOS 7D | Unofficial test build from this fork. Requires a bootable CompactFlash card. | รุ่นทดลองจากฟอร์กนี้ ต้องใช้การ์ด CompactFlash ที่บูตได้
 200D.101      no        -           Canon EOS 200D / Rebel SL2
 750D.110      no        -           Canon EOS 750D / Rebel T6i
 77D.110       no        -           Canon EOS 77D

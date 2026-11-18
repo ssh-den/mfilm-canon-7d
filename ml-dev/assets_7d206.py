@@ -52,7 +52,7 @@ def build_assets(tables, card, work):
             (darkroom / target).write_bytes(table)
             release_index.append(f'{target}  {key}  {source}  {digest}')
         (card / 'TABLES.txt').write_text('\n'.join(release_index) + '\n')
-        (card / 'THIRD_PARTY-TABLES.txt').write_bytes(archive.read('THIRD_PARTY.txt'))
+        (card / 'THIRD_PARTY-TABLES.txt').write_bytes((HERE.parent / 'THIRD_PARTY.md').read_bytes())
 
     fontblob = work / 'fontblob'
     subprocess.run(['cc', '-O2', '-I', FOS, FOS / 'tools/fontblob.c', '-o', fontblob], check=True)

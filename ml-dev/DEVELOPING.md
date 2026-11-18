@@ -1,10 +1,6 @@
 # How the darkroom develops a frame
 
-What `ml-dev/filmos/fos_dev.c` does to a Canon RAW frame, step by step, as arithmetic. It is written down
-for **Darkrooms**, which has to do the same so the two give the same picture
-([#132](https://github.com/HNGSeries/mfilm-canon-film-simulation/issues/132), decided in
-[#119](https://github.com/HNGSeries/mfilm-canon-film-simulation/issues/119)): a difference between them can
-then only come from one of these steps, and the check at the end says how big it is.
+What `ml-dev/filmos/fos_dev.c` does to a Canon RAW frame, step by step.
 
 Numbers below are light on a scale where **1.0 is the camera's white level**, unless a step says
 otherwise. The code holds them as integers, 4096 for 1.0. Where a detail is only in the code, the
@@ -91,29 +87,7 @@ picture, but a measured film stock's table does not carry them.
 
 A colour cut at `clip` in step 3 or 4 does not come out white: the table prints it as a pale colour.
 The measuring command has to leave such patches out, so the computer build of the darkroom writes, for
-every pixel of the print, whether one of its colours reached `clip` (`FOS_DUMP_CUT`). Darkrooms needs to
-be able to say the same for the frames of a reference, or its pictures have to be read with the
-darkroom's.
-
-## The check
-
-```sh
-make -C ml-dev/filmos/sim out/devtest out/tables/TABLES.txt
-python3 ml-dev/films/measure.py darkrooms <folder of Darkrooms' pictures>
-```
-
-The folder holds Darkrooms' pictures of `ml-dev/films/sample/SAMPLE.CR2`, developed as people get them,
-one for each of the first film stocks, named by film stock: `portra400.jpg`, `gold200.jpg`,
-`ektar100.jpg`, `velvia50.jpg`, `cinestill800t.jpg`, `hp5.jpg`, `pro400h.jpg`. The command develops the
-same frame with the darkroom at its Large size, reduces both pictures to 30 × 20 blocks of light, and
-compares the blocks: plain dE2000, the mean and the worst block.
-
-The provisional limit for "the same picture" is 1 on the mean and 3 at the worst block. For scale, the
-darkroom against itself at another size, on the sample with Kodak Gold 200: Large against Medium is 0.33
-and 1.31, Large against Small 0.59 and 2.45. So a mean under about 0.3 cannot be asked of two pictures
-of different sizes; what is left at that level is grain, the glow's grid and the JPEG.
-
-Darkrooms is closed source. Its pictures are compared here, and only the numbers go back to #132.
+every pixel of the print, whether one of its colours reached `clip` (`FOS_DUMP_CUT`).
 
 ## The computer build's switches
 

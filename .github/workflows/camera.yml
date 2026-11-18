@@ -1,28 +1,17 @@
 name: M-Film camera
 
-# Builds the camera files (Magic Lantern + Film OS) for every camera in ml-dev/cameras.txt
-# that is "working", "issues" or "testing". (Darkrooms, the desktop program, is built in its
-# own repository.)
-#   git tag v0.1.0 && git push origin v0.1.0     builds and publishes the zips under Releases
-#                                                (the tag must match the VERSION file)
-#   Actions > "M-Film camera" > Run workflow     builds and keeps the zips as artifacts; with a
-#                                                tag in the box it publishes them as well
+# Checks shared code on the upstream camera matrix.
+# Build EOS 7D.206 locally using ml-dev/fork/7D.206/BUILD.md.
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to publish the builds under (leave empty to only build)"
-        required: false
-        default: ""
   push:
-    tags: ["v*"]
     branches: ["main"]
     paths: ["ml-dev/**", "VERSION", ".github/workflows/camera.yml"]
   pull_request:
     paths: ["ml-dev/**", "VERSION", ".github/workflows/camera.yml"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # the darkroom on the PC simulator, on a card of rolls it has to find or explain: shot as JPEG,
@@ -91,51 +80,16 @@ jobs:
       - name: Build
         # the film OS as a module (ML/modules/filmos.mo, loaded after boot): on every camera since 0.2
         run: bash ml-dev/build_fork.sh ${{ matrix.platform }}
-      - name: Zip
-        run: |
-          p=${{ matrix.platform }}
-          if [ "$p" = EOSM.202 ]; then d=ml-dev/out/fork; else d=ml-dev/out/fork-$p; fi
-          cp ml-dev/CAMERA-README.txt "$d/M-FILM-README.txt"
-          # the licence and the notices travel with the binaries (GPL-2.0 section 1; the credit and the
-          # CC BY-SA 4.0 notice of Pat David's tables, which 59 of the colour tables in ML/ are made from,
-          # and Film-Luts' own MIT notice)
-          cp LICENSE "$d/LICENSE.txt"
-          cp THIRD_PARTY.md "$d/THIRD_PARTY.txt"
-          (cd "$d" && zip -qr "$GITHUB_WORKSPACE/M-Film-camera-$p.zip" .)
-          ls -la M-Film-camera-$p.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: M-Film-camera-${{ matrix.platform }}
-          path: M-Film-camera-${{ matrix.platform }}.zip
-          if-no-files-found: error
-      # every film's colour table and the list of them (file, film, source, SHA-256), for the desktop
-      # darkroom: the same bytes as in every zip's ML/DARKROOM, so both develop with the same tables.
-      # Made once, from the EOS M's build: the tables don't depend on the camera.
-      - name: The films' colour tables, on their own
-        if: ${{ matrix.platform == 'EOSM.202' }}
-        run: |
-          mkdir tables
-          cp ml-dev/out/fork/ML/DARKROOM/LOOK*.LUT ml-dev/out/TABLES.txt tables/
-          cp LICENSE tables/LICENSE.txt
-          cp THIRD_PARTY.md tables/THIRD_PARTY.txt
-          (cd tables && sha256sum LOOK*.LUT > SHA256SUMS && zip -qr "$GITHUB_WORKSPACE/M-Film-tables.zip" .)
-          ls -la M-Film-tables.zip
-      - uses: actions/upload-artifact@v4
-        if: ${{ matrix.platform == 'EOSM.202' }}
-        with:
-          name: M-Film-tables
-          path: M-Film-tables.zip
-          if-no-files-found: error
 
-  # builds for testers, not for releases. Their artifacts are named test-..., which the release leaves out.
+  # Check the build without the darkroom.
   camera-test:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { platform: 6D.116,   flags: --no-darkroom, suffix: -nodark }
+          - { platform: 6D.116,   flags: --no-darkroom }
     runs-on: ubuntu-24.04
-    name: camera ${{ matrix.platform }}${{ matrix.suffix }} (for testing)
+    name: camera ${{ matrix.platform }} (without darkroom)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -151,58 +105,3 @@ jobs:
           arm-none-eabi-gcc --version | head -1
       - name: Build
         run: bash ml-dev/build_fork.sh ${{ matrix.platform }} ${{ matrix.flags }}
-      - name: Zip
-        run: |
-          p=${{ matrix.platform }}
-          d=ml-dev/out/fork-$p${{ matrix.suffix }}
-          cp ml-dev/CAMERA-README.txt "$d/M-FILM-README.txt"
-          # the licence and the notices travel with the binaries (GPL-2.0 section 1; the credit and the
-          # CC BY-SA 4.0 notice of Pat David's tables, which 59 of the colour tables in ML/ are made from,
-          # and Film-Luts' own MIT notice)
-          cp LICENSE "$d/LICENSE.txt"
-          cp THIRD_PARTY.md "$d/THIRD_PARTY.txt"
-          (cd "$d" && zip -qr "$GITHUB_WORKSPACE/M-Film-camera-$p${{ matrix.suffix }}.zip" .)
-          ls -la M-Film-camera-$p${{ matrix.suffix }}.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: test-M-Film-camera-${{ matrix.platform }}${{ matrix.suffix }}
-          path: M-Film-camera-${{ matrix.platform }}${{ matrix.suffix }}.zip
-          if-no-files-found: error
-
-  release:
-    needs: [darkroom, camera]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.tag != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: The tag is the VERSION file's
-        run: |
-          tag="${{ inputs.tag || github.ref_name }}"
-          want="v$(tr -d ' \r\n' < VERSION)"
-          [ "$tag" = "$want" ] || { echo "tag $tag but VERSION says $want: change one of them"; exit 1; }
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: M-Film-*             # the cameras' zips and the tables; not the test-... builds
-          path: zips
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          name: M-Film ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          # the README's Download links go to releases/latest; Darkrooms' releases here never take it
-          make_latest: true
-          files: zips/*.zip
-          body: |
-            **On the camera** (`M-Film-camera-<camera>.zip`): the Film OS with Magic Lantern. Unzip it onto the card
-            and run *Firmware ver.* → update once (see M-FILM-README.txt in the zip). How far testers have got on
-            each camera, and what's still wrong, is in the README's camera table: see TESTING.md before you put it
-            on a camera nobody has tried yet. Every zip has the in-camera darkroom. The film OS is a module on
-            every camera (ML/modules/filmos.mo, loaded after boot): one zip a camera.
-
-            **The films' colour tables** (`M-Film-tables.zip`): every film's table as the cameras' zips carry them
-            in ML/DARKROOM, with a list of them and their checksums. The desktop darkroom reads the same files,
-            so both give the same colour. You don't need this zip for a camera.
-
-            The colour tables of 59 films are adapted from film emulation tables by Pat David and are licensed
-            CC BY-SA 4.0, not GPL-2.0: THIRD_PARTY.txt in every zip says which, what was changed and what you may do.

@@ -18,8 +18,6 @@ and [TESTING.md](TESTING.md).
 | Film OS: the screens on the camera | `ml-dev/filmos/` | Little. Talks to the camera only through `fos_port_*`. |
 | The Magic Lantern fork | `ml-dev/fork/`, `ml-dev/build_fork.sh` | Completely. Redone for every camera. |
 
-The desktop program, Darkrooms, is a separate closed-source program and isn't covered here.
-
 ### 1. Film OS (moderate)
 
 All of `ml-dev/filmos/fos_*.c` draws into its own 720 × 480, 8-bit canvas and reaches the

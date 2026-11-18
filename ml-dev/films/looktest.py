@@ -20,8 +20,8 @@ away as that film is, which is worked out here with no picture. Checks:
     fetched, a scan's patches kept as a file stand in for the scan
   - the darkroom's own exposure against the automatic scan is printed, and
     decides nothing
-  - measure.py darkrooms: two pictures of the sample RAW are the same
-    picture or not (the darkroom at another size stands in for Darkrooms)
+  - measure.py compare-prints: two pictures of the sample RAW are the same
+    picture or not (the darkroom at another size stands in for the reference developer)
 
 Needs numpy and Pillow, and the simulator's devtest, mkcr2 and film list.
 """
@@ -232,14 +232,14 @@ def main():
     check(max(abs(a - b) for a, b in zip(numbers(r.distance.decides), base)) < 0.01,
           "with the patches kept, the scan's pictures are not needed: the same numbers without them")
 
-    # ---- Darkrooms against the darkroom, on the sample RAW. (Darkrooms is not here: the darkroom at another size stands in.)
+    # ---- the reference developer against the darkroom, on the sample RAW. (The reference uses the darkroom at another print size.)
     from PIL import Image
-    dr = tmp / "darkrooms"
+    dr = tmp / "compare-prints"
     dr.mkdir()
     save = lambda pix, name: Image.fromarray(np.rint(pix * 255).astype(np.uint8)).save(dr / name, quality=92)     # noqa: E731
     medium = measure.Darkroom(key).picture(measure.SAMPLE, 1)
     save(medium, key + ".jpg")
-    cmd = [sys.executable, str(HERE / "measure.py"), "darkrooms", str(dr), "--films"]
+    cmd = [sys.executable, str(HERE / "measure.py"), "compare-prints", str(dr), "--films"]
     r = subprocess.run(cmd + [key], capture_output=True, text=True)
     mean, worst, _ = measure.same_picture(measure.Darkroom(key).picture(measure.SAMPLE), medium)
     check(r.returncode == 0 and "the same picture" in r.stdout and "NOT" not in r.stdout and mean < 0.6 and worst < 2,

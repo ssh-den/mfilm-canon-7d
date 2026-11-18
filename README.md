@@ -4,16 +4,13 @@
 
 # M-Film
 
-This fork adds an experimental build for the **Canon EOS 7D on firmware 2.0.6**.
-See [building and testing the 7D.206 card files](ml-dev/fork/7D.206/BUILD.md).
-
 **Your Canon, shot like film.**
 
 A film camera's interface for Canon cameras that run Magic Lantern.<br>
-Load a roll from a shelf of 68 film stocks, shoot without looking at the screen, then develop the roll: in the camera, or on your computer with **Darkrooms**.<br>
+Load a roll from a shelf of 68 film stocks, shoot without looking at the screen, then develop the roll in the camera.<br>
 The camera side is free and open, for everyone.
 
-[![Download](https://img.shields.io/badge/Download-eca834?style=for-the-badge)](../../releases/latest)
+[![Build for EOS 7D](https://img.shields.io/badge/Build%20for%20EOS%207D-eca834?style=for-the-badge)](ml-dev/fork/7D.206/BUILD.md)
 [![Buy the developer a coffee](https://img.shields.io/badge/Buy%20the%20developer%20a%20coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buy.stripe.com/7sY14p8d93QE5Ny5M58so02)
 
 [![License GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-3b352f)](LICENSE)
@@ -24,13 +21,22 @@ The camera side is free and open, for everyone.
 [![Threads](https://img.shields.io/badge/Threads-%40mfilm.official-3b352f?logo=threads&logoColor=white)](https://www.threads.com/@mfilm.official)
 [![X](https://img.shields.io/badge/X-%40mfilm__official-3b352f?logo=x&logoColor=white)](https://x.com/mfilm_official)
 
-**English** · [ภาษาไทย](README.th.md) · [Films](#68-films) · [Cameras](#cameras) · [Darkrooms](#develop-on-your-computer-darkrooms) · [Take it further](PORTING.md)
+**English** · [ภาษาไทย](README.th.md) · [Films](#68-films) · [Cameras](#cameras) · [Take it further](PORTING.md)
 
 <br>
 
 <img src="ml-dev/filmos/preview/shelf.gif" alt="The film shelf in the camera" width="720">
 
 </div>
+
+> [!WARNING]
+> **Unofficial, experimental M-Film build for the Canon EOS 7D on firmware 2.0.6.**
+> Build the 7D card files yourself from this source-only fork. It is maintained
+> independently of the upstream M-Film and Magic Lantern projects and Canon.
+> Earlier builds had limited testing on one camera.
+> Use a spare CompactFlash card and back up your photos and settings first.
+> Test builds can crash or lose data and are provided as is under the [GPL](LICENSE).
+> Report 7D issues in [this fork's issue tracker](../../issues).
 
 ---
 
@@ -78,9 +84,6 @@ the frame will get: with a slow film, or an adapted lens stopped down, it can be
 
 **0.2.3** is about colour, on every camera:
 
-- A roll comes out the same colour in the camera and in **Darkrooms 0.2.0**: the two develop the same way and
-  read the same colour tables ([#132](../../issues/132); [how the darkroom develops](ml-dev/DEVELOPING.md)).
-  From this version on, Darkrooms updates itself.
 - The darkroom develops a frame with the white balance the camera was on, and cuts it where that frame's own
   samples clip: blown highlights are no longer pink.
 - The 59 films whose colour comes from Pat David's tables are fed a finished photo's tone, as those tables
@@ -158,7 +161,6 @@ asks, and remembers) or in *Settings → Print size*:
 | **Small** | 720 × 480 (0.35 MP) | the camera's screen: the quickest | none |
 | **Medium** | 1728 × 1152 (2 MP) | a third of the sensor each way | × 2.4 |
 | **Large** | 2592 × 1728 (4.5 MP) | half the sensor each way | × 1.8 and × 3.6 |
-| **Darkrooms on a computer** | the full RAW, 5184 × 3456 (18 MP) | every pixel | |
 
 - A vertical frame is the same, turned upright. Other sensors give in proportion: Large is 2736 × 1824 on a 6D,
   2880 × 1920 on a 5D Mark III.
@@ -169,8 +171,7 @@ asks, and remembers) or in *Settings → Print size*:
   (2 MB and 4.5 MB a frame).
 - A camera without the memory for the size you asked makes the next one down, and says so.
 - To make a roll's prints bigger later: *Delete → Prints only* on the Darkroom page, then develop it again.
-  Your RAWs stay on the card, so **[Darkrooms](#develop-on-your-computer-darkrooms)** can also develop
-  any roll you've shot at full size.
+  Your RAWs stay on the card.
 
 ### Basic or Realistic
 
@@ -187,7 +188,6 @@ asks, and remembers) or in *Settings → Print size*:
 
 - **Basic:** shoot, then develop. Stop early with *Finish roll* on the roll's page (the first row of Home).
 - **Realistic:** like a real film camera. Rewind the roll before it can be developed.
-- Either way the roll is the same on the card, so Darkrooms reads both.
 
 ### On a DSLR: a top plate
 
@@ -257,6 +257,7 @@ still wrong. If you have one marked *needs a tester*, you can help: [TESTING.md]
 | Canon EOS 5D Mark III (firmware 1.1.3) | 1.1.3 | ⚠️ Tried, known problem | Starts and shoots; the in-camera darkroom couldn't find the RAWs ([#31](../../issues/31)): fixed in 0.1.3. From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | `M-Film-camera-5D3.113.zip` |
 | Canon EOS 5D Mark III (firmware 1.2.3) | 1.2.3 | ⚠️ Tried, known problem | Starts and shoots; the in-camera darkroom couldn't find the RAWs ([#16](../../issues/16), [#37](../../issues/37)): fixed in 0.1.3. From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | `M-Film-camera-5D3.123.zip` |
 | Canon EOS 6D | 1.1.6 | ✅ **Works** | Works since 0.1.2 ([#17](../../issues/17), [#22](../../issues/22)). From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. 0.2 keeps Canon's screen away for as long as a frame is being saved, and lights the readout when a dial is turned ([#17](../../issues/17), [#23](../../issues/23)): say if either still happens. | `M-Film-camera-6D.116.zip` |
+| Canon EOS 7D | 2.0.6 | 🧪 Experimental fork | Unofficial test build from this fork. Requires a bootable CompactFlash card. | [Build from source](ml-dev/fork/7D.206/BUILD.md) |
 | Canon EOS 50D | 1.0.9 | ✅ **Works** | Works ([#43](../../issues/43)). 0.1.5 repaints the plate when Canon draws over it, but a slight flicker may remain, as on the 500D; 0.1.6 puts the plate together off-screen and puts back only what Canon drew over: reports wanted in [#64](../../issues/64). From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | `M-Film-camera-50D.109.zip` |
 | Canon EOS 60D | 1.1.1 | ✅ **Works** | Works since 0.1.3 ([#25](../../issues/25)). 0.1.5: Screen orientation for a broken hinge switch ([#49](../../issues/49)). From 0.2 the film OS loads as a module here too (as on the 550D and 650D): not confirmed on this camera yet, say if it starts. | `M-Film-camera-60D.111.zip` |
 | Canon EOS 70D | 1.1.2 | ⚠️ Tried, known problem | 0.1.5 works on a tester's 70D, with the film OS as a module ([#40](../../issues/40)); on another, Magic Lantern installs but the camera then starts Canon's own firmware ([#58](../../issues/58)): more reports wanted. | `M-Film-camera-70D.112.zip` |
@@ -269,14 +270,42 @@ still wrong. If you have one marked *needs a tester*, you can help: [TESTING.md]
 | Canon EOS 1100D / Rebel T3 / Kiss X50 | 1.0.5 | ✅ **Works** | Works on testers' 1100Ds ([#81](../../issues/81), [#109](../../issues/109)): shooting, the frame count in LiveView (the optical viewfinder has nowhere to show one) and the in-camera darkroom at all three sizes, at about 11, 24 and 37 seconds a frame for Small, Medium and Large. Canon's newest firmware for it is 1.0.6, and M-Film needs 1.0.5: on 1.0.6, go back with Canon's 1.0.5 updater first ([#81](../../issues/81)), or *Firmware ver.* → update can stay on *Loading* ([TESTING.md](TESTING.md#if-firmware-ver--update-stays-on-loading)). | `M-Film-camera-1100D.105.zip` |
 | Canon EOS 1300D / Rebel T6 / Kiss X80 | 1.1.0 | 🧪 Builds, needs a tester | New in 0.2.1, on Magic Lantern's own 1300D port, which is new and experimental. Installed with mlinstall over USB, not a firmware update ([TESTING.md](TESTING.md#canon-eos-1300d)). Loading a roll doesn't set ISO, white balance or picture style here: Magic Lantern can't change Canon's settings on the 1300D yet, so the look comes when the roll is developed. Set the camera's white balance to Daylight yourself (Tungsten for a tungsten film): the darkroom develops with the white balance the camera was on. Canon's firmware 1.1.0 comes in two kinds: if the camera hangs at power on, take the battery out and put the old card back. Needs a first tester. | `M-Film-camera-1300D.110.zip` |
 
-**Not yet:** 5D Mark IV, 5DS R, 6D Mark II, 7D Mark II, 77D, 80D, 200D, 750D, 850D, M50, R, R5, R6, RP, SX70 HS, SX740 HS (Magic Lantern itself is still experimental on these) · 7D (Magic Lantern's current source doesn't build it).
+**Not yet:** 5D Mark IV, 5DS R, 6D Mark II, 7D Mark II, 77D, 80D, 200D, 750D, 850D, M50, R, R5, R6, RP, SX70 HS, SX740 HS (Magic Lantern itself is still experimental on these).
 <!-- cameras:end -->
 
-✅ tried on the camera and works · ⚠️ tried, with a problem · 🧪 builds; waiting for someone to try it. From 0.2 the film OS is a module on every camera ([why](ml-dev/MEMORY.md)): one zip a camera. The card files are in each
-[release](../../releases/latest). The list lives in [`ml-dev/cameras.txt`](ml-dev/cameras.txt); porting
-notes in [PORTING.md](PORTING.md).
+✅ tried on the camera and works · ⚠️ tried, with a problem · 🧪 testing or experimental.
+Build the 7D ZIP locally using the [7D build guide](ml-dev/fork/7D.206/BUILD.md).
+For other models, see the
+[upstream M-Film releases](https://github.com/HNGSeries/mfilm-canon-film-simulation/releases).
+The camera list lives in [`ml-dev/cameras.txt`](ml-dev/cameras.txt) and porting notes in [PORTING.md](PORTING.md).
 
 ### Putting it on the camera
+
+#### Canon EOS 7D (2.0.6)
+
+1. Confirm the camera is on Canon firmware **2.0.6**. You need a camera set up
+   to boot Magic Lantern and an already bootable **CompactFlash** card. See
+   [the 7D Magic Lantern setup guide](https://github.com/ssh-den/magiclantern_simplified_7d/blob/dev/platform/7D.206/README.md)
+   for the boot prerequisites.
+2. [Build `M-Film-camera-7D.206.zip` from source](ml-dev/fork/7D.206/BUILD.md).
+   Copy `autoexec.bin` and the `ML` folder from the same ZIP to the root of the
+   CF card. Boot the camera with the card inserted.
+3. Set Canon's **Image quality** to **RAW** or **RAW+JPEG**, and **Image review**
+   to **Off**. Press **TRASH** to open M-Film. From Home, **MENU** returns to
+   shooting and **Q** opens Canon Quick Control. The Magic Lantern menu is
+   available in M-Film's Settings.
+4. Leave Canon's file-name prefix at `IMG_` for the first test. M-Film reads
+   the prefix reported by Canon for each shot, so a custom prefix belongs in the
+   camera settings. If an older roll's journal does not match the file name,
+   M-Film may find it for viewing or developing and will keep the original on
+   the card when deleting.
+
+For updates, finish your current roll, back up the card, and use the matching
+`autoexec.bin` and `ML` files from the new build on a bootable CF card. The
+standalone [7D Magic Lantern fork](https://github.com/ssh-den/magiclantern_simplified_7d)
+can be used by itself.
+
+#### Other models from upstream M-Film
 
 1. The camera needs exactly the Canon firmware in the table (MENU → last settings tab → *Firmware ver.*).
 2. Unzip the card files for your camera onto an SD card, put it in the camera and run *Firmware ver.* →
@@ -286,76 +315,18 @@ notes in [PORTING.md](PORTING.md).
 4. Full steps, and how to go back: [TESTING.md](TESTING.md). Building it yourself:
    `ml-dev/build_fork.sh <camera>`.
 
-### Updating to a new version
+### Updating other models to a new version
 
 Don't unzip a new version over the old one: files left from before can make the camera misbehave.
 Start from a clean card instead:
 
-1. **Finish the roll** and develop it, in the camera or with Darkrooms. A new install starts with no roll loaded.
+1. **Finish the roll** and develop it in the camera. A new install starts with no roll loaded.
 2. **Copy your photos off the card** (the `DCIM` folder), including the developed JPEG folders.
 3. **Format the card in the camera** and choose to remove Magic Lantern.
 4. **Unzip the new version** onto the card, as on the first install.
 5. Put the card in the camera and run *Firmware ver.* → update again, then switch the camera on.
 
 Your settings (film, screen colour, Film mode) go back to their defaults: set them again.
-
----
-
-## Develop on your computer: Darkrooms
-
-The camera develops its rolls by itself, slowly. **Darkrooms** does it on your computer, fast.
-Plug the camera in (or put its card in a reader) and open Darkrooms. It finds the camera, shows every
-roll you shot with its film, and develops them at full resolution.
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/app-rolls.jpg" alt="Film rolls"></td>
-<td width="50%"><img src="docs/images/app-darkroom.jpg" alt="Developing a roll"></td>
-</tr>
-<tr>
-<td><b>Your rolls</b>, each with its canister and a strip of its frames. Develop whole rolls or pick single frames.</td>
-<td><b>The lights go red.</b> Prints come out of the developer and hang on the line.</td>
-</tr>
-<tr>
-<td><img src="docs/images/app-lights-on.jpg" alt="Lights on: the roll and its contact sheet"></td>
-<td><img src="docs/images/app-develop.jpg" alt="Develop settings"></td>
-</tr>
-<tr>
-<td><b>Lights on.</b> Every roll gets a contact sheet and its own folder.</td>
-<td><b>Full detail.</b> Every pixel of the RAW, JPEG with 4:4:4 colour, EXIF kept, optional date stamp.</td>
-</tr>
-</table>
-
-### Free, or Full
-
-| | Free | Darkrooms Full |
-|---|---|---|
-| Rolls a day | 1, of up to 36 frames (the same roll again that day doesn't count) | as many as you like |
-| Every film, full size, EXIF, contact sheets | ✓ | ✓ |
-| Many rolls at once on every core | | ✓ |
-| Price | free, with a Google account | **US$2.99 a month** or **US$14.99 once** (checkout shows your currency), updates included |
-
-The camera's own darkroom stays free and unlimited. Darkrooms goes with your **Google account**: no key to type in or keep.
-Click the badge at the top right → *Sign in with Google*, then *Get it monthly* or *Get it for life*. After you pay,
-Darkrooms switches to Full by itself within a few seconds. One account works on **two computers** at a time
-(sign in on the other one with the same Google account). Cancel the monthly plan any time in the program
-(*Manage the subscription*): it stays on until the end of the month paid for.
-[Privacy](https://darkrooms-licence.suphalapruksasathit.workers.dev/privacy): your pictures never leave your computer.
-
-### Download
-
-| Your computer | Get | Open it |
-|---|---|---|
-| **Windows 10 / 11** | `Darkrooms-windows-x64.zip` | Unzip, open the `Darkrooms` folder, run `Darkrooms.exe` (the orange icon: Windows often shows it as just `Darkrooms`, without `.exe`). If Windows warns: *More info* → *Run anyway*. |
-| **Mac with Intel** | `Darkrooms-macos-intel.zip` | Unzip, drag to Applications and open it. The first time: *System Settings → Privacy & Security → Open Anyway* (macOS 14 and older: right-click → Open). |
-| **Mac with Apple silicon** | `Darkrooms-macos-apple-silicon.zip` | Same. |
-
-From the **[Darkrooms releases](../../releases?q=Darkrooms&expanded=true)** (the newest is at the top). About 30–50 MB. The program isn't signed with Apple or
-Microsoft yet, hence the warning the first time. Windows Security has called Darkrooms 0.1.1 a trojan
-(`Trojan:Win32/Bearfoos.B!ml`), a guess of its machine-learning model that has been reported to Microsoft as wrong ([#152](../../issues/152)).
-
-From 0.2.0 on, Darkrooms updates itself: when a new version is out it says so at the top, shows what's new, and
-installs it with one click. Keep it somewhere you can write to (on a Mac, in Applications).
 
 ---
 
@@ -366,10 +337,8 @@ installs it with one click. Keep it somewhere you can write to (on a Mac, in App
   screens), what has to be redone per camera (the Magic Lantern side), and how to go about it.
 - **Every screen and button** of the camera side, and how it works inside (in Thai):
   [docs/MANUAL.th.md](docs/MANUAL.th.md).
-- **Something broken?** [Open an issue](../../issues/new/choose) and paste what the gear icon →
-  *What does the computer see?* shows.
+- **Something broken?** [Open an issue](../../issues/new/choose). shows.
 - **The films** (looks, LUT list) are in [`ml-dev/films/`](ml-dev/films/); the camera build bakes them in.
-- **Darkrooms**, the desktop program, is closed source and isn't in this repository.
 
 ## Support
 
@@ -385,6 +354,6 @@ and [X](https://x.com/mfilm_official).
 M-Film is made by **HNGSeries**, on top of [Magic Lantern](https://www.magiclantern.fm/).
 
 This repository: GPL-2.0 ([LICENSE](LICENSE)), as the camera side builds on Magic Lantern.
-Darkrooms (the desktop program) is a separate, closed-source program under its own licence. The colour tables of
+The colour tables of
 59 films are adapted from Pat David's and are CC BY-SA 4.0, not GPL-2.0. Those, the fonts and other
 parts: [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with Canon, Kodak, Fujifilm or any film maker.

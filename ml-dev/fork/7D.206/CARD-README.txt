@@ -9,8 +9,10 @@ Press TRASH for M-Film. Use Settings > Magic Lantern menu for the ML menu.
 Use still photo mode and RAW or RAW+JPEG for the in-camera darkroom.
 
 Test the first roll at Small print size. Check that M-Film opens, ML's menu
-still works, and settings survive a restart. The camera test for this
-particular build is pending.
+still works, and settings survive a restart. Start with Canon's default
+IMG_ prefix. M-Film follows the prefix reported by Canon when each shot
+is taken.
 
 Use expendable test shots to check Q > Actions in the prints viewer.
 The option to delete the source removes the original image from the card.
+If the source name must be inferred from an older journal, it is kept.

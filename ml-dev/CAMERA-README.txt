@@ -22,7 +22,7 @@ Install
 
 Update to a new version
   Don't copy a new version over the old one: files left from before can make the camera misbehave.
-  1. Finish the roll and develop it (in the camera or with Darkrooms).
+  1. Finish the roll and develop it in the camera.
   2. Copy your photos off the card (the DCIM folder).
   3. Format the card in the camera, and choose to remove Magic Lantern.
   4. Install the new version as above, Firmware ver. > update included.

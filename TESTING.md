@@ -13,8 +13,9 @@ it takes about 20 minutes, and you can always go back.
 
 ## 1. Get the files
 
-From the [latest release](../../releases/latest) (or the newest run under *Actions*), download
-`M-Film-camera-<your camera>.zip`:
+For the EOS 7D, [build `M-Film-camera-7D.206.zip` from source](ml-dev/fork/7D.206/BUILD.md).
+For other models, get the matching ZIP from the
+[upstream M-Film releases](https://github.com/HNGSeries/mfilm-canon-film-simulation/releases).
 
 <!-- cameras:start -->
 | Camera | Canon firmware it needs | File |
@@ -24,6 +25,7 @@ From the [latest release](../../releases/latest) (or the newest run under *Actio
 | Canon EOS 5D Mark III (firmware 1.1.3) | 1.1.3 | `M-Film-camera-5D3.113.zip` |
 | Canon EOS 5D Mark III (firmware 1.2.3) | 1.2.3 | `M-Film-camera-5D3.123.zip` |
 | Canon EOS 6D | 1.1.6 | `M-Film-camera-6D.116.zip` |
+| Canon EOS 7D | 2.0.6 | `M-Film-camera-7D.206.zip` |
 | Canon EOS 50D | 1.0.9 | `M-Film-camera-50D.109.zip` |
 | Canon EOS 60D | 1.1.1 | `M-Film-camera-60D.111.zip` |
 | Canon EOS 70D | 1.1.2 | `M-Film-camera-70D.112.zip` |
@@ -49,6 +51,9 @@ If the film shelf doesn't appear and you see Magic Lantern's own menu instead, t
 its line in the *Modules* tab says why. Tell us what it says.
 
 ## 2. Install
+
+On the EOS 7D, follow the [7D.206 CF card instructions](README.md#canon-eos-7d-206).
+The steps below apply to other models.
 
 1. Format a card **in the camera**, then copy everything from the zip to the card's root.
 2. Camera off, card in, camera on. MENU → *Firmware ver.* → update (first time only: this lets the
@@ -81,7 +86,7 @@ Good to know before you start:
   and Magic Lantern's crash log, if there is one, say which build yours is.
 - **Loading a roll doesn't change the camera's settings here.** Magic Lantern can't change ISO, white
   balance or picture style on the 1300D yet, so set ISO yourself. The film's look comes when the roll is
-  developed, in the camera or in Darkrooms.
+  developed, in the camera.
 - **No trash button:** a short press of **Av** opens Home.
 - **Don't add Magic Lantern's RAW video modules** (`mlv_lite` and the like) to the card: Magic Lantern
   has reports of them damaging 1300Ds for good
@@ -114,7 +119,6 @@ Go through these and note what happens (a photo of the screen helps a lot):
       the screen as bright as before once it is done?
 - [ ] In the Darkroom, **◀** on a developed roll: *Delete roll* → *Prints only* → *Delete*. On a computer:
       are its JPEG folder in `DCIM` and `ML/DARKROOM/Rnnn` gone, with no empty folder left?
-- [ ] Open the card in **Darkrooms** on a computer: are the rolls and films there?
 
 Then [open an issue](../../issues/new/choose) with: your camera and firmware, what worked, what didn't,
 and the file **`ML/FILMROLL.LOG`** from the card attached.

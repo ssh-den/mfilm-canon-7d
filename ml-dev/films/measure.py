@@ -4,7 +4,7 @@
     python3 measure.py look [RECORD ...]                the look of every film stock that has a reference
     python3 measure.py compare RECORD SET=DIR SET=DIR   two sets of pictures of the same frames
     python3 measure.py read RECORD SET=DIR              a set's chart patches, as a file for the repository
-    python3 measure.py darkrooms DIR                    Darkrooms' pictures of the sample RAW against the darkroom's
+    python3 measure.py compare-prints DIR              Reference prints of the sample RAW against the darkroom's
 
 look develops the Canon frames of a paired shot with the darkroom's own code
 built for a computer (devtest), with the film stock's table, and holds the
@@ -32,15 +32,14 @@ stock is measured with both on. look fails if a film stock whose record claims i
 as measured ("measured: yes") is outside a pass mark; the others are only
 reported.
 
-darkrooms is the standing check that the two developers give the same
-picture (#132). DIR holds Darkrooms' pictures of one RAW frame (--raw,
+compare-prints is the standing check that the two developers give the same
+picture (#132). DIR holds reference prints of one RAW frame (--raw,
 default the sample, films/sample/SAMPLE.CR2), one a film stock, named by it:
 gold200.jpg. For each of the first film stocks (--films for others) the
 darkroom develops the same frame at its Large size, both pictures are
 reduced to 30 x 20 blocks of light, and the blocks compared: plain dE2000,
 the mean and the worst block, against SAME. It fails if a film stock is
-outside or has no picture. Darkrooms is closed source: its pictures come
-here, and only numbers go back.
+outside or has no picture.
 
 compare is the second half alone. RECORD is the record of a paired shot (../references/<name>/record.txt; the
 made-up one is the example of the format). Each SET=DIR is one set of
@@ -50,7 +49,7 @@ Frame 7's picture is the one whose name ends in 7: 07.tif, scan-07.jpg. The
 first set is the look (a developer's pictures of the Canon frames), the
 second what it is held against (the locked scan); differences are the second
 less the first. The same command sets one scan against another, or the
-darkroom against Darkrooms (#101).
+darkroom against the reference developer (#101).
 
 In every frame that shows the chart it reads the 24 patches, the middle half
 of each, found from the centres of the chart's four corner patches, and
@@ -106,7 +105,7 @@ GREYS = list(range(18, 24))
 MID_GREY = 21                           # neutral 5: the patch the scanner's exposure is set on
 
 PASS = {"colour": 3.0, "tone": 3.0}     # the pass marks, on the mean. Provisional (#101, #117)
-SAME = {"mean": 1.0, "worst": 3.0}      # how far Darkrooms' picture of a frame may be from the darkroom's: plain dE2000. Provisional (#121)
+SAME = {"mean": 1.0, "worst": 3.0}      # how far the reference print of a frame may be from the darkroom's: plain dE2000. Provisional (#121)
 # the blocks two developers' pictures of one frame are compared in. Large enough that grain and a pixel's shift at
 # an edge drop out: the darkroom's own Large print against its Medium is 0.33 on the mean and 1.31 at the worst
 BLOCKS = (30, 20)
@@ -830,8 +829,8 @@ def same_picture(a, b, what_a="the first picture", what_b="the second"):
     return float(de.mean()), float(de.max()), ((x + 0.5) / BLOCKS[0], (y + 0.5) / BLOCKS[1])
 
 
-def darkrooms(folder, raw=SAMPLE, keys=FIRST, devtest=None, films_list=None, tables=None):
-    """Darkrooms' pictures of a frame in folder, each against the darkroom's: [(film stock, mean, worst, where)],
+def compare_prints(folder, raw=SAMPLE, keys=FIRST, devtest=None, films_list=None, tables=None):
+    """Reference prints of a frame in folder, each against the darkroom's: [(film stock, mean, worst, where)],
     with None for the numbers where there is no picture."""
     import films
     folder, out = Path(folder), []
@@ -915,8 +914,8 @@ def main():
     k.add_argument("--films", help="the film list devtest reads (default: filmos/sim/out/FOSFILMS.BIN)")
     k.add_argument("--tables", help="the film stocks' tables (default: filmos/sim/out/tables; a made-up paired shot: the made-up film)")
     k.add_argument("--mkcr2", help="for a made-up paired shot's frames (default: filmos/sim/out/mkcr2)")
-    dr = sub.add_parser("darkrooms", help="Darkrooms' pictures of a RAW frame against the darkroom's")
-    dr.add_argument("folder", help="Darkrooms' pictures, named by film stock: gold200.jpg")
+    dr = sub.add_parser("compare-prints", help="Reference prints of a RAW frame against the darkroom's")
+    dr.add_argument("folder", help="Reference prints, named by film stock: gold200.jpg")
     dr.add_argument("--raw", default=str(SAMPLE), help="the frame both developed (default: films/sample/SAMPLE.CR2)")
     dr.add_argument("--films", default=",".join(FIRST), help="the film stocks, with commas (default: the first set)")
     dr.add_argument("--devtest")
@@ -944,10 +943,10 @@ def main():
             if failed:
                 sys.exit(f"measure: claimed as measured and outside a pass mark: {', '.join(failed)}")
             return
-        if a.cmd == "darkrooms":
+        if a.cmd == "compare-prints":
             import films
-            got = darkrooms(a.folder, a.raw, [k for k in a.films.split(",") if k], a.devtest, None, a.tables)
-            print(f"Darkrooms against the darkroom, on {Path(a.raw).name}: plain dE2000 over {BLOCKS[0]} x {BLOCKS[1]} blocks "
+            got = compare_prints(a.folder, a.raw, [k for k in a.films.split(",") if k], a.devtest, None, a.tables)
+            print(f"Reference prints against the darkroom, on {Path(a.raw).name}: plain dE2000 over {BLOCKS[0]} x {BLOCKS[1]} blocks "
                   f"(the same picture: {SAME['mean']:g} on the mean, {SAME['worst']:g} at the worst block)")
             bad = []
             for key, mean, worst, where in got:
@@ -962,7 +961,7 @@ def main():
                 if not ok:
                     bad.append(name)
             if bad:
-                sys.exit(f"measure: Darkrooms and the darkroom differ, or a picture is missing: {', '.join(bad)}")
+                sys.exit(f"measure: the reference developer and the darkroom differ, or a picture is missing: {', '.join(bad)}")
             return
         sets = []
         for s in ([a.set] if a.cmd == "read" else [a.look, a.against]):

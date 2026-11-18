@@ -12,6 +12,7 @@ STATUS = {
     "working": "✅ **Works**",
     "issues": "⚠️ Tried, known problem",
     "testing": "🧪 Builds, needs a tester",
+    "experimental": "🧪 Experimental fork",
     "planned": "⏳ Planned",
     "no": "— Not yet",
 }
@@ -21,6 +22,7 @@ STATUS_TH = {
     "working": "✅ **ใช้ได้**",
     "issues": "⚠️ ลองแล้ว ยังมีปัญหา",
     "testing": "🧪 build ได้แล้ว รอคนทดสอบ",
+    "experimental": "🧪 รุ่นทดลองจากฟอร์ก",
     "planned": "⏳ วางแผนไว้",
 }
 WHY_TH = {
@@ -79,8 +81,11 @@ def main():
     def table(head, status, not_yet, why_text, end=".", th=False):
         rows = [head, "|---|---|---|---|---|"]
         for c in cams:
-            if c["status"] in ("working", "issues", "testing", "planned"):
-                dl = f"`M-Film-camera-{c['plat']}.zip`" if c["status"] in ("working", "issues", "testing") else ""
+            if c["status"] in ("working", "issues", "testing", "experimental", "planned"):
+                dl = f"`M-Film-camera-{c['plat']}.zip`" if c["status"] != "planned" else ""
+                if c["status"] == "experimental":
+                    label = "Build from source" if not th else "build จากซอร์ส"
+                    dl = f"[{label}](ml-dev/fork/{c['plat']}/BUILD.md)"
                 rows.append(f"| {c['name']} | {c['fw']} | {status[c['status']]} | {issue_links(c['note_th' if th else 'note'])} | {dl} |")
         # the ones Magic Lantern isn't ready on: one line, grouped by why
         why = {}
@@ -108,7 +113,8 @@ def main():
 
     built = [c for c in cams if c["status"] in ("working", "issues", "testing")]
     rows = ["| Camera | Canon firmware it needs | File |", "|---|---|---|"]
-    rows += [f"| {c['name']} | {c['fw']} | `M-Film-camera-{c['plat']}.zip` |" for c in built]
+    rows += [f"| {c['name']} | {c['fw']} | `M-Film-camera-{c['plat']}.zip` |"
+             for c in cams if c in built or c["status"] == "experimental"]
     replace(ROOT / "TESTING.md", "<!-- cameras:start -->", "<!-- cameras:end -->", "\n".join(rows))
 
     wf = ROOT / ".github" / "workflows" / "camera.yml"

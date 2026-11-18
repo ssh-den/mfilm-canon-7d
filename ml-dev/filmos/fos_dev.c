@@ -3,8 +3,8 @@
  * The frame's CR2 is read a chunk at a time and its lossless JPEG decoded;
  * every sample is added straight into the print pixel it falls in, so the
  * 18 million sample mosaic becomes a 720 x 480 picture without ever being
- * held: a box filter and the demosaic in one. The print then gets what
- * the desktop darkroom (Darkrooms) does: daylight balance, the camera's colours
+ * held: a box filter and the demosaic in one. The print then gets daylight balance,
+ * the camera's colours
  * to sRGB, the scanner's exposure, the film's balance, vignette and
  * halation, the film's colour (a 3D table built from the same film model),
  * and grain. Finally it is reduced to FOS_PRINT_COLOURS colours with error

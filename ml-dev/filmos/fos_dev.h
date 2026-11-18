@@ -13,7 +13,7 @@
 
 /* ---------------------------------------------------------------- looks */
 
-/* a film's look, from films/films.py (see fos_looks.c; Darkrooms on the desktop uses the same) */
+/* a film's look, from films/films.py (see fos_looks.c) */
 struct fos_hue_shift { int8_t from, to; float amount, chroma; };
 struct fos_look
 {

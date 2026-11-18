@@ -1,6 +1,4 @@
-// The newest release of a kind (M-Film's v*, Darkrooms' app-v*), from GitHub's
-// API. Both are published in the same repository, so "releases/latest" can be
-// either: this looks for the right one. Kept for an hour in sessionStorage.
+// Upstream camera releases, cached for an hour in sessionStorage.
 
 const API = 'https://api.github.com/repos/HNGSeries/mfilm-canon-film-simulation/releases?per_page=30';
 let list = null;

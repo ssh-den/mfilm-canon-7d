@@ -116,7 +116,7 @@ frame 24: chart, main light | 0 | 1/750 | drift
 # tags is not applied.
 #
 # A set is a kind of picture of the frames: "canon" is the Canon frames as a
-# developer prints them (the darkroom and Darkrooms print the whole frame, so
+# developer prints them (the darkroom prints the whole frame, so
 # they share it), "locked" the locked scan, "automatic" the lab's everyday
 # scan of the same roll with its corrections on. A scan on another machine
 # is another set with its own lines.

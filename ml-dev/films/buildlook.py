@@ -35,7 +35,7 @@ there; none has been read yet.)
 
 It writes, into --out (default: filmos/sim/out/references/<name>/built):
 
-    LOOKnn.LUT   the film stock's table, as the camera and Darkrooms read it
+    LOOKnn.LUT   the film stock's table, as the camera reads it
     look.txt     the look's numbers, which the table is baked from
 
 and, for a paired shot that was shot, look.txt beside the record as well,

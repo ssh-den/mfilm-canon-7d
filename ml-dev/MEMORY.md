@@ -90,7 +90,7 @@ that stays on.
 That is what happened: the full 650D and 700D builds give a black screen at power on (a 650D tester by message,
 the 700D in #19). The 650D tester built it `--no-darkroom` (689,664 bytes at boot) and it starts with the film
 interface. So from 0.1.3 to 0.1.5 both were `nodark` in cameras.txt: CI built and released them without the
-darkroom, under the usual zip name, and their rolls were developed with Darkrooms. The film OS as a module
+darkroom, under the usual zip name. The film OS as a module
 (below) brought the darkroom back: a 650D (#54) and a 700D (#19) start 0.1.5's module build and develop in the
 camera. Since then both are `:module` in cameras.txt, their one zip is the module build, and no camera is
 released without the darkroom.

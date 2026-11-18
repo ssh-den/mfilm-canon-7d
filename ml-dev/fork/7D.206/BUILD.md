@@ -1,7 +1,8 @@
 # Building M-Film for EOS 7D.206
 
-Use a clean checkout of this M-Film fork, a local clone of
-[magiclantern_simplified_7d](https://github.com/ssh-den/magiclantern_simplified_7d),
+Build the 7D card files locally from a clean checkout of this M-Film fork.
+You also need a local clone of
+[magiclantern_simplified_7d](https://github.com/ssh-den/magiclantern_simplified_7d)
 and the `M-Film-tables.zip` asset from the
 [upstream v0.2.3 release](https://github.com/HNGSeries/mfilm-canon-film-simulation/releases/tag/v0.2.3).
 

@@ -65,12 +65,12 @@ python3 madeup.py /tmp/shot
 python3 measure.py compare ../references/made-up/record.txt canon=/tmp/shot/canon locked=/tmp/shot/locked
 ```
 
-`python3 ml-dev/films/measure.py darkrooms <folder>` is the standing check that Darkrooms and the darkroom
+`python3 ml-dev/films/measure.py compare-prints <folder>` checks whether two developers
 give the same picture of the sample RAW; [DEVELOPING.md](../DEVELOPING.md) has it, with the steps both
 have to take.
 
 `compare` is the second half alone: a record and two sets of pictures of its frames, the look first and
-what it is held against second. It serves one scan against another, and the darkroom against Darkrooms.
+what it is held against second. It serves one scan against another, or another developer against the camera.
 Here it holds a plain print of the chart against the made-up film, which is far outside the pass marks, as
 it should be.
 
@@ -90,7 +90,7 @@ the held-back frames, which the fitting never opens. The correction stays only i
 there by a tenth or more. A look that fits the frames it was built from and not the held-back ones is not
 measured, and the command says so.
 
-It writes the film stock's table (`LOOKnn.LUT`, as the camera and Darkrooms read it) and `look.txt`, the
+It writes the film stock's table (`LOOKnn.LUT`, as the camera reads it) and `look.txt`, the
 numbers the table is baked from. For a paired shot that was shot, `look.txt` goes beside the record and
 belongs in the repository. Once the record says `measured: yes`, the shelf's table for that film stock is
 baked from it (`ml-dev/filmos/tools/gentables.py`), in place of its table "in the style of" the film, and

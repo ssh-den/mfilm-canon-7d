@@ -19,8 +19,7 @@
  *
  * Loading a roll sets picture style, contrast / saturation / colour tone,
  * white balance and ISO for that stock, and starts a roll log next to the
- * images (DCIM/xxxCANON/ROLL_nnn.TXT) that the PC film lab reads
- * (the desktop darkroom, Darkrooms). Film keys must match films/films.py.
+ * images (DCIM/xxxCANON/ROLL_nnn.TXT). Film keys must match films/films.py.
  *
  * Shots are detected by watching the file number, so every frame is
  * logged even in burst mode.

@@ -3,8 +3,7 @@
  * Some cameras can't spare the memory the in-camera darkroom takes at boot
  * (fos_dark.c, fos_dev.c, fos_lab.c, fos_looks.c, fos_jpeg.c: about 60 KB).
  * Built with build_fork.sh --no-darkroom, those are replaced by this: the
- * Darkroom and Prints screens say where the rolls are developed instead
- * (Darkrooms, on a computer). The shelf's samples still show (fos_print.c).
+ * Darkroom and Prints screens show a notice. The shelf's samples still show.
  */
 
 #include "fos_ui.h"
@@ -20,8 +19,7 @@ static void nd_bake()
     fos_text(cv, &fos_font_lg, ND_X, 82, "Darkroom", C_TEXT, OPAQUE, 0);
     fos_text(cv, &fos_font_sm, ND_X, 120, "This camera's M" T_DOT "FILM has no darkroom of its own,", C_TEXT2, OPAQUE, 0);
     fos_text(cv, &fos_font_sm, ND_X, 144, "to leave the camera the memory it needs.", C_TEXT2, OPAQUE, 0);
-    fos_text(cv, &fos_font_sm, ND_X, 184, "Your rolls are on the card, every frame in RAW:", C_TEXT3, OPAQUE, 0);
-    fos_text(cv, &fos_font_sm, ND_X, 208, "develop them with Darkrooms on a computer.", C_ACCENT2, OPAQUE, 0);
+    fos_text(cv, &fos_font_sm, ND_X, 184, "Your rolls and RAW files are on the card.", C_TEXT3, OPAQUE, 0);
     ui_to_bg(0);
 }
 

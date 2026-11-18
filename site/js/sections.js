@@ -1,9 +1,8 @@
 // The sections under the camera: the films (fos/films.json), the cameras
 // (fos/cameras.json), both made by ml-dev/filmos/web/sitedata.py from FILMS.md and
-// cameras.txt; and Darkrooms' download links, from the newest Darkrooms release.
+// cameras.txt.
 
 import { T, currentLang as lang } from './i18n.js';
-import { latestRelease } from './releases.js';
 
 const REPO = 'https://github.com/HNGSeries/mfilm-canon-film-simulation';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -88,20 +87,6 @@ function drawCameras() {
   document.getElementById('cam-later').innerHTML = `<b>${esc(T('cams.later'))}</b> ${esc(later)}`;
 }
 
-// ---------------------------------------------------------------- Darkrooms
-
-async function darkrooms() {
-  const r = await latestRelease((tag) => tag.startsWith('app-v'));
-  if (!r) return;
-  for (const a of document.querySelectorAll('#dr-links [data-os]')) {
-    const asset = r.assets.find((x) => x.name.includes(a.dataset.os) && x.name.endsWith('.zip'));
-    if (asset) a.href = asset.browser_download_url;
-  }
-  const v = document.getElementById('dr-version');
-  v.dataset.version = r.tag.replace(/^app-v/, '');
-  v.textContent = T('dr.unsigned') + ' ' + T('dr.version', v.dataset.version);
-}
-
 // ---------------------------------------------------------------- go
 
 Promise.all([
@@ -114,10 +99,7 @@ Promise.all([
   console.warn('sections:', e);
   grid.innerHTML = `<p class="muted">${esc(T('films.none'))} <a class="link" href="${REPO}/blob/main/FILMS.md">FILMS.md →</a></p>`;
 });
-darkrooms().catch((e) => console.warn('darkrooms:', e));
 document.addEventListener('mfilm:lang', () => {
   if (shelves.length) { drawTabs(); drawState(); }
   drawCameras();
-  const v = document.getElementById('dr-version');
-  if (v.dataset.version) v.textContent = T('dr.unsigned') + ' ' + T('dr.version', v.dataset.version);
 });

@@ -5,7 +5,6 @@
   films.json     FILMS.md: the films on their four shelves, with each one's photo, and each one's
                  state from ml-dev/films/states.py (measured against the real film, or not yet)
   films/*.jpg    docs/films: the same RAW developed with each film
-  app/*.jpg      docs/images/app-*.jpg: Darkrooms
 
   sitedata.py <out dir>
 """
@@ -35,6 +34,8 @@ def cameras():
             continue
         platform, status, _limit, rest = m.groups()
         status = status.split(":")[0]
+        if status == "experimental":
+            continue   # The upstream download page only lists downloadable builds.
         name, note, note_th = (part.strip() for part in (rest.split("|") + ["", ""])[:3])
         if status in ("working", "issues", "testing", "nodark"):
             out.append({"platform": platform, "name": name, "firmware": firmware(platform),
@@ -84,10 +85,6 @@ def main():
             if src.exists():
                 shutil.copyfile(src, photos / src.name)
                 n += 1
-    app = out / "app"
-    app.mkdir(exist_ok=True)
-    for src in sorted((ROOT / "docs/images").glob("app-*.jpg")):
-        shutil.copyfile(src, app / src.name)
     total = sum(len(s["films"]) for s in shelves)
     print(f"{len(cams['cameras'])} cameras ({len(cams['later'])} not yet), {total} films on "
           f"{len(shelves)} shelves, {n} photos")

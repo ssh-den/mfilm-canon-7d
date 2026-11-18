@@ -83,7 +83,3 @@ _Avoid_: camera (on the website)
 
 **Darkroom**:
 The developing that happens inside the camera.
-_Avoid_: Darkrooms (that is the desktop program)
-
-**Darkrooms**:
-The desktop program that develops rolls on a computer.
