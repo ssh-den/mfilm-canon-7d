@@ -612,11 +612,8 @@ static int file_exists(const char *path)
 static void frame_jpeg_path(char *path, int size, const struct fos_lab_frame *frame)
 {
     path[0] = 0;
-    if (!dcim_dir[0]) return;
-    const char *base = strrchr(frame->cr2, '/');
-    char name[9];
-    fos_copy(name, sizeof(name), base ? base + 1 : frame->cr2, 8);
-    snprintf(path, size, "%s/%s.JPG", dcim_dir, name);
+    if (!dcim_dir[0] || !frame->logged_stem[0]) return;
+    snprintf(path, size, "%s/%s.JPG", dcim_dir, frame->logged_stem);
 }
 
 #ifdef CONFIG_7D_206

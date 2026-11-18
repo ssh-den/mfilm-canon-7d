@@ -540,9 +540,11 @@ static int dcf_source_name(const char *name)
 static void frames_frame(void *ctx, int no, const char *file, const char *when, const char *fstop)
 {
     struct frames *s = ctx;
-    if (no < 1 || no > s->max || !dcf_source_name(file)) { s->failed = 1; return; }
+    if (no < 1 || no > s->max || !dcf_source_name(file) || s->frames[no - 1].no)
+    { s->failed = 1; return; }
     struct fos_lab_frame *f = &s->frames[no - 1];
     f->no = no;
+    fos_copy(f->logged_stem, sizeof(f->logged_stem), file, 8);
     snprintf(f->cr2, sizeof(f->cr2), "%sDCIM/%s/%s", s->card, s->folder, file);
     snprintf(f->when, sizeof(f->when), "%s", when);
     snprintf(f->fstop, sizeof(f->fstop), "%s", fstop);
@@ -561,17 +563,14 @@ static void frames_log(void *ctx, const char *card, const char *folder, const ch
     if (!read_log(path, &rd)) s->failed = 1;
 }
 
-/* A legacy journal can have a different prefix than its DCF file.
- * Try a unique name with the same number and extension in that folder. */
-struct frame_name_match { const char *suffix; char name[13]; int count; };
+/* File numbers are useful for finding candidates, never for proving ownership. */
+struct frame_name_match { const char *number; const char *extension; char name[13]; int count; };
 
 static int frame_name_entry(void *ctx, const char *name, int is_dir)
 {
     struct frame_name_match *m = ctx;
-    if (is_dir || strlen(name) != 12 || strcmp(name + 4, m->suffix)) return 1;
-    for (int i = 0; i < 4; i++)
-        if (!((name[i] >= 'A' && name[i] <= 'Z') ||
-              (name[i] >= '0' && name[i] <= '9') || name[i] == '_')) return 1;
+    if (is_dir || !dcf_source_name(name) || memcmp(name + 4, m->number, 4) ||
+        (m->extension && strcmp(name + 8, m->extension))) return 1;
     memcpy(m->name, name, sizeof(m->name));
     return ++m->count < 2;
 }
@@ -602,14 +601,12 @@ static void *try_frame_prefixes(char *path)
         if (k && !memcmp(base, was, 4)) continue;       /* tried already */
         f = fos_port_open(path, 0);
     }
-    if (!f)
+    if (!f) memcpy(base, was, 4);
+#ifdef CONFIG_7D_206
+    /* Some 7D journals predate reliable reporting of Canon's custom prefix. */
+    if (!f && dcf_source_name(base) && base != path)
     {
-        memcpy(base, was, 4);
-        for (int i = 4; i < 8; i++)
-            if (base[i] < '0' || base[i] > '9') return 0;
-        /* base stays in the caller's buffer; list only its parent folder. */
-        if (base == path) return 0;
-        struct frame_name_match m = { .suffix = base + 4 };
+        struct frame_name_match m = { .number = base + 4, .extension = base + 8 };
         char saved = base[-1];
         base[-1] = 0;
         int listed = fos_port_list(path, frame_name_entry, &m);
@@ -628,6 +625,7 @@ static void *try_frame_prefixes(char *path)
         }
         else if (m.count > 1) fos_port_log("lab: ambiguous frame number; keeping the logged name");
     }
+#endif
     return f;
 }
 
@@ -669,6 +667,24 @@ static int marker_entry(void *ctx, const char *name, int is_dir)
     return 1;
 }
 
+/* A JPEG with the exact stem also covers old logs that always said .CR2. */
+static int open_exact_source(struct fos_lab_frame *frame)
+{
+    char *extension = frame->cr2 + strlen(frame->cr2) - 4;
+    void *f = fos_port_open(frame->cr2, 0);
+    if (!f && !strcmp(extension, ".CR2"))
+    {
+        memcpy(extension, ".JPG", 4);
+        f = fos_port_open(frame->cr2, 0);
+        if (!f) memcpy(extension, ".CR2", 4);
+    }
+    if (!f) return 0;
+    fos_port_close(f);
+    frame->source_exact = 1;
+    frame->missing = frame->jpeg = !strcmp(extension, ".JPG");
+    return 1;
+}
+
 int fos_lab_frames(int roll, struct fos_lab_frame *frames, int max)
 {
     if (!frames || max < 1 || max > FOS_MAX_FRAMES) return -1;
@@ -698,10 +714,15 @@ int fos_lab_frames(int roll, struct fos_lab_frame *frames, int max)
     {
         if (i < FOS_MAX_FRAMES && removed[i]) { frames[i].deleted = frames[i].missing = 1; continue; }
         if (!frames[i].cr2[0]) { frames[i].missing = 1; continue; }
-        void *f = open_frame_file(frames[i].cr2);
-        if (f)
+        int exact = open_exact_source(&frames[i]);
+        void *f = exact ? 0 : open_frame_file(frames[i].cr2);
+        if (exact || f)
         {
-            fos_port_close(f);
+            if (f)
+            {
+                fos_port_close(f);
+                frames[i].missing = frames[i].jpeg = !strcmp(frames[i].cr2 + strlen(frames[i].cr2) - 4, ".JPG");
+            }
             const char *base = strrchr(frames[i].cr2, '/');
             base = base ? base + 1 : frames[i].cr2;
             if (!seen[0] && strlen(base) == 12) memcpy(seen, base, 4);
@@ -747,7 +768,7 @@ int fos_lab_frames(int roll, struct fos_lab_frame *frames, int max)
 /* ---------------------------------------------------------------- deleting a roll */
 
 /* Remove only our named print files. Canon's file API does not reliably
- * remove directories: empty directories stay and are not deletion errors.
+ * remove directories, so cleaning up an empty directory is best effort.
  * Unknown files, LUTs and other rolls are never swept. */
 #define SWEEP_MAX (2 * FOS_MAX_FRAMES + 2)       /* each frame's print and its zoom file, the sheet */
 struct sweep { int n; char names[SWEEP_MAX][13]; };
@@ -776,6 +797,8 @@ static int sweep(const char *dir)
         snprintf(path, sizeof(path), "%s/%s", dir, s.names[i]);
         failed += remove_logged(path);
     }
+    if (!failed && !fos_port_abort() && fos_port_list(dir, first_only, 0) == 0)
+        fos_port_remove(dir);
     return failed;
 }
 
@@ -809,25 +832,41 @@ static int source_path_ok(const char *path)
     return dcf_source_name(p + 9);
 }
 
-/* In a tagged export directory, remove only a unique DCF JPEG matching
- * this journal slot. Multiple prefixes are ambiguous and remain untouched. */
+/* Exports use the journal stem. A nearby file can never change what we delete. */
 static int delete_exports(const struct fos_lab_frame *frame, const struct found *dirs)
 {
-    if (frame->deleted || !frame->cr2[0]) return 0;
+    if (frame->deleted || !frame->logged_stem[0]) return 0;
     if (!source_path_ok(frame->cr2)) return 1;
-    char suffix[9], path[160];
-    const char *base = strrchr(frame->cr2, '/') + 1;
-    snprintf(suffix, sizeof(suffix), "%s", base + 4);
-    memcpy(suffix + 4, ".JPG", 5);
+    char path[160];
     int failed = 0;
     for (int i = 0; i < dirs->n; i++)
     {
-        struct frame_name_match m = {.suffix = suffix};
-        fos_port_list(dirs->paths[i], frame_name_entry, &m);
-        if (m.count > 1) { failed++; fos_port_log("lab: ambiguous export names; kept"); continue; }
-        if (!m.count) continue;
-        snprintf(path, sizeof(path), "%s/%s", dirs->paths[i], m.name);
+        snprintf(path, sizeof(path), "%s/%s.JPG", dirs->paths[i], frame->logged_stem);
         failed += remove_logged(path);
+    }
+    return failed;
+}
+
+static int clean_export_dirs(const struct found *dirs)
+{
+    char tag[16], path[96];
+    snprintf(tag, sizeof(tag), "ROLL%03d.TXT", dirs->roll);
+    int failed = 0;
+    for (int i = 0; i < dirs->n; i++)
+    {
+        const char *dir = dirs->paths[i];
+        snprintf(path, sizeof(path), "%s/%s", dir, tag);
+        if (fos_port_list(dir, jpeg_file,
+                          &(struct jpeg_scan){.roll = -1}) != 1 ||
+            !tagged(dir, dirs->roll))
+        {
+            failed++;
+            continue;
+        }
+        int left = remove_logged(path);
+        failed += left;
+        if (!left && !fos_port_abort() && fos_port_list(dir, first_only, 0) == 0)
+            fos_port_remove(dir);
     }
     return failed;
 }
@@ -836,14 +875,19 @@ static int delete_source(const struct fos_lab_frame *frame)
 {
     if (frame->deleted || !frame->cr2[0]) return 0;
     if (!source_path_ok(frame->cr2)) return 1;
-    if (frame->missing && !frame->jpeg)
+    if (!frame->source_exact)
     {
-        /* Missing is not permission to guess an ambiguous custom prefix. */
+        if (!frame->missing || frame->jpeg)
+        {
+            fos_port_log("lab: source found by fallback; kept");
+            return 1;
+        }
+        /* A missing original is already gone unless a candidate still exists. */
         char dir[64];
         const char *base = strrchr(frame->cr2, '/');
         fos_copy(dir, sizeof(dir), frame->cr2, base - frame->cr2);
-        struct frame_name_match m = {.suffix = base + 5};
-        fos_port_list(dir, frame_name_entry, &m);
+        struct frame_name_match m = {.number = base + 5};
+        if (fos_port_list(dir, frame_name_entry, &m) < 0) return 1;
         if (m.count) fos_port_log("lab: unresolved source prefix; kept");
         return m.count != 0;
     }
@@ -938,7 +982,8 @@ int fos_lab_delete(int roll, int whole, struct fos_lab_frame *frames)
         failed += sweep(path);
     }
     for (int i = 0; i < n; i++) failed += delete_exports(&frames[i], &f);
-    if (whole && !failed)
+    failed += clean_export_dirs(&f);
+    if (whole)
     {
         for (int i = 0; i < n; i++)
             failed += delete_source(&frames[i]);
@@ -951,12 +996,6 @@ int fos_lab_delete(int roll, int whole, struct fos_lab_frame *frames)
                     snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d/D%02d.TXT", cards[c], roll, i);
                     failed += remove_logged(path);
                 }
-        if (!failed)
-            for (int i = 0; i < f.n; i++)
-            {
-                snprintf(path, sizeof(path), "%s/ROLL%03d.TXT", f.paths[i], roll);
-                failed += remove_logged(path);
-            }
         f.n = 0;
         if (!failed) each_log(logs_log, &f);
         if (f.overflow) failed++;

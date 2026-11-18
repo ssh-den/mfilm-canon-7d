@@ -185,8 +185,10 @@ struct fos_lab_frame
 {
     int no;
     char cr2[64];
+    char logged_stem[9];        /* original basename without the extension */
     int missing;                /* the file isn't there (deleted, or shot as JPEG) */
     int jpeg;                   /* missing, and shot as JPEG: cr2 names its .JPG */
+    int source_exact;           /* matched the journal's card, folder and basename */
     int deleted;                /* explicit Dnn.TXT marker, never redeveloped */
     char when[17];
     char fstop[6];

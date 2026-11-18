@@ -59,8 +59,8 @@ deletes() {     # deletes <what> <scene> <path that goes>...   (on $dcard)
 deletes "Delete roll: not confirmed" delete_cancel ""
 # prints only (007, Adobe RGB, frame 2 deleted): its JPEG folder and the darkroom's prints
 deletes "Delete roll: prints only" delete_prints \
-    "./DCIM/Oct1002 Ektar100" "./DCIM/Oct1002 Ektar100/ROLL007.TXT" "./DCIM/Oct1002 Ektar100/_MG_0505.JPG" \
-    "./DCIM/Oct1002 Ektar100/_MG_0507.JPG" "./DCIM/Oct1002 Ektar100/_MG_0508.JPG" \
+    "./DCIM/Oct1002 Ektar100" "./DCIM/Oct1002 Ektar100/ROLL007.TXT" "./DCIM/Oct1002 Ektar100/IMG_0505.JPG" \
+    "./DCIM/Oct1002 Ektar100/IMG_0507.JPG" "./DCIM/Oct1002 Ektar100/IMG_0508.JPG" \
     ./ML/DARKROOM/R007 ./ML/DARKROOM/R007/F01.BMP ./ML/DARKROOM/R007/F03.BMP ./ML/DARKROOM/R007/F04.BMP \
     ./ML/DARKROOM/R007/F01.ZOM ./ML/DARKROOM/R007/F03.ZOM ./ML/DARKROOM/R007/F04.ZOM \
     ./ML/DARKROOM/R007/SHEET.BMP
@@ -83,9 +83,22 @@ deletes "Delete roll: whole roll across IMG_9999, again" delete_whole \
     ./DCIM/100CANON/IMG_9999.CR2 ./DCIM/100CANON/ROLL_008.TXT ./DCIM/101CANON/ROLL_008.TXT
 # the roll in the camera (006 here): nothing goes
 deletes "Delete roll: never the roll in the camera" delete_loaded ""
-# the whole roll (007) once its prints are gone: straight to "sure?"; Canon's _MG_ names
-deletes "Delete roll: whole roll in Adobe RGB" delete_whole \
-    ./DCIM/100CANON/_MG_0505.CR2 ./DCIM/100CANON/_MG_0507.CR2 ./DCIM/100CANON/_MG_0508.CR2 ./DCIM/100CANON/ROLL_007.TXT
+# Old logs used IMG_ even for Adobe RGB. A different custom prefix could
+# also be a later, unrelated photo with a reused number.
+cp "$dcard/DCIM/100CANON/_MG_0507.CR2" "$dcard/DCIM/100CANON/TEST0506.CR2"
+deletes "Delete roll: legacy fallback names and unrelated RAW stay" delete_whole ""
+expect "Delete roll: legacy source ownership refused" "lab: source found by fallback; kept"
+mv "$dcard/DCIM/100CANON/ROLL_007.TXT" out/roll007-legacy.txt
+sed -e 's/IMG_0505/_MG_0505/' -e 's/IMG_0507/TEST0507/' -e 's/IMG_0508/_MG_0508/' \
+    out/roll007-legacy.txt > "$dcard/DCIM/100CANON/ROLL_007.TXT"
+mv "$dcard/DCIM/100CANON/_MG_0507.CR2" "$dcard/DCIM/100CANON/TEST0507.CR2"
+# A journal without a source entry for a slot has no authority over its files.
+awk '$1 != "2"' "$dcard/DCIM/100CANON/ROLL_007.TXT" > out/roll007-exact.txt
+mv out/roll007-exact.txt "$dcard/DCIM/100CANON/ROLL_007.TXT"
+touch "$dcard/DCIM/100CANON/TEST0507.JPG"
+deletes "Delete roll: exact mixed prefixes and the RAW+JPEG pair" delete_whole \
+    ./DCIM/100CANON/_MG_0505.CR2 ./DCIM/100CANON/TEST0507.CR2 ./DCIM/100CANON/TEST0507.JPG \
+    ./DCIM/100CANON/_MG_0508.CR2 ./DCIM/100CANON/ROLL_007.TXT
 # the whole roll shot as JPEG (006): Canon's JPEGs are its frames
 deletes "Delete roll: whole roll shot as JPEG" delete_whole \
     ./DCIM/100CANON/IMG_0501.JPG ./DCIM/100CANON/IMG_0502.JPG ./DCIM/100CANON/IMG_0503.JPG \
@@ -120,7 +133,7 @@ dcard=out/cardl FOS_NO_RMDIR=1 deletes "Delete roll, no folder removal: every fi
     ./DCIM/OCT1003/ROLL008.TXT ./ML/DARKROOM/R008/F01.BMP ./ML/DARKROOM/R008/F02.BMP ./ML/DARKROOM/R008/F03.BMP \
     ./ML/DARKROOM/R008/F04.BMP ./ML/DARKROOM/R008/SHEET.BMP \
     ./ML/DARKROOM/R008/F01.ZOM ./ML/DARKROOM/R008/F02.ZOM ./ML/DARKROOM/R008/F03.ZOM ./ML/DARKROOM/R008/F04.ZOM
-expect "Delete roll, no folder removal: the folders counted" "lab: roll 008: deleted all, 2 left"
+expect "Delete roll, no folder removal: empty folders are harmless" "lab: roll 008: deleted all, 0 left"
 
 # A roll developed again finds its folder whichever of the day's names it
 # has: here "Oct1002 Ektar100 2", the first name free again (another roll
