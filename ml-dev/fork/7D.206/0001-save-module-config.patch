@@ -1,0 +1,45 @@
+diff --git a/src/config.c b/src/config.c
+index 7d43f175a..c610a1665 100644
+--- a/src/config.c
++++ b/src/config.c
+@@ -987,6 +987,26 @@ void config_save()
+ #endif
+ }
+ 
++#if defined(CONFIG_MODULES) && defined(CONFIG_7D206_FULL_CORE)
++/* A background module can persist its state without entering the ML menu.
++ * Share the normal save lock and lifetime guard; report errors to the caller. */
++int module_config_save_now(module_entry_t *module)
++{
++    if (!module || !module->config || !module->name[0]) return -1;
++    for (const char *p=module->name;*p;p++)
++        if (!((*p>='a' && *p<='z') || (*p>='0' && *p<='9') || *p=='_')) return -1;
++    take_semaphore(config_save_sem,0);
++    int rc=-1;
++    if (!ml_shutdown_requested && module_port.done && !module_port.loading && !module_port.result) {
++        char path[128];
++        snprintf(path,sizeof(path),"%s%s.cfg",get_config_dir(),module->name);
++        rc=module_config_save(path,module);
++    }
++    give_semaphore(config_save_sem);
++    return rc;
++}
++#endif
++
+ void config_save_at_shutdown()
+ {
+ #ifdef CONFIG_CONFIG_FILE
+diff --git a/src/module.h b/src/module.h
+index 38f6c7eef..bcb638dd6 100644
+--- a/src/module.h
++++ b/src/module.h
+@@ -321,6 +321,9 @@ void module_save_configs();
+ /* defined in config.c */
+ unsigned int module_config_load(char *filename, module_entry_t *module);
+ unsigned int module_config_save(char *filename, module_entry_t *module);
++#ifdef CONFIG_7D206_FULL_CORE
++int module_config_save_now(module_entry_t *module);
++#endif
+ 
+ int module_send_keypress(int module_key);
+ 

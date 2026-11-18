@@ -4,6 +4,7 @@
 *.c  text eol=lf
 *.h  text eol=lf
 *.patch text eol=lf
+ml-dev/fork/7D.206/*.patch whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 Makefile text eol=lf
 # checksum lists are read line by line: keep LF
 *.sha256 text eol=lf

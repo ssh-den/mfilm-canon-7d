@@ -1,0 +1,25 @@
+diff --git a/src/zebra.c b/src/zebra.c
+index 1bcb7b51a..75aa1e5c2 100644
+--- a/src/zebra.c
++++ b/src/zebra.c
+@@ -40,6 +40,10 @@
+ #include "focus.h"
+ #include "lvinfo.h"
+ #include "powersave.h"
++#ifdef CONFIG_7D206_FULL_CORE
++#include "module.h"
++static int (*filmos_overlays)(void) = MODULE_FUNCTION(filmos_overlays);
++#endif
+ 
+ #include "imgconv.h"
+ #include "falsecolor.h"
+@@ -408,6 +412,9 @@ extern int idle_globaldraw_disable;
+ 
+ int get_global_draw() // menu setting, or off if 
+ {
++#ifdef CONFIG_7D206_FULL_CORE
++    if (filmos_overlays()) return 0;
++#endif
+ #ifdef FEATURE_GLOBAL_DRAW
+     
+     #ifdef LV_OVERLAYS_MODE
