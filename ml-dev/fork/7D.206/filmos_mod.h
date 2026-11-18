@@ -1,7 +1,4 @@
-/* EOS 7D.206 module callbacks and settings.
- * The film OS as a module: the end of filmroll.c when it is built as
- * ML/modules/filmos.mo (build_fork.sh --module), in place of its INIT_FUNC
- * and TASK_CREATE. Included there so it sees filmroll.c's statics. */
+/* EOS 7D.206 module callbacks and settings. Included by filmroll.c. */
 
 
 /* The settings, saved in ML/SETTINGS/filmos.cfg by the module loader (same
@@ -66,56 +63,7 @@ static void filmos_save_if_dirty(void)
     }
 }
 
-/* A camera that ran the built-in film OS kept these settings in Magic
- * Lantern's own magic.cfg (config.c). The first time the module starts (no
- * FILMOS.CFG yet) it takes them from there, so a roll in the camera carries
- * on where it was. */
-static void config_from_core()
-{
-#ifdef CONFIG_7D_206
-    /* This port never shipped a built-in film OS. Keep its settings private. */
-    return;
-#else
-    char path[64];
-    snprintf(path, sizeof(path), "%sfilmos.cfg", get_config_dir());
-    if ((int) FIO_GetFileSize_direct(path) >= 0)
-        return;
-    snprintf(path, sizeof(path), "%smagic.cfg", get_config_dir());
-    int size = 0;
-    char *buf = (char *) read_entire_file(path, &size);
-    if (!buf)
-        return;
-    int taken = 0;
-    for (char *line = buf; line < buf + size; )
-    {
-        char *end = line;
-        while (end < buf + size && *end != '\n' && *end != '\r') end++;
-        char save = (end < buf + size) ? *end : 0;
-        if (end < buf + size) *end = 0;
-        if (strncmp(line, "filmroll.", 9) == 0)
-        {
-            for (module_config_t *c = __module_config_filmos; c->name; c++)
-            {
-                int n = strlen(c->ref->name);
-                if (strncmp(line, c->ref->name, n) == 0 && (line[n] == ' ' || line[n] == '='))
-                {
-                    char *v = line + n;
-                    while (*v == ' ' || *v == '=') v++;
-                    *(c->ref->value) = atoi(v);
-                    taken++;
-                    break;
-                }
-            }
-        }
-        if (end < buf + size) *end = save;
-        line = end + 1;
-    }
-    fio_free(buf);
-    dbg("init: %d settings taken from magic.cfg (first start as a module)", taken);
-#endif
-}
-
-/* errno for the maths library linked into the module (fork/module/Makefile) */
+/* errno storage for the maths library linked into this module. */
 int *fos_errno(void)
 {
     static int e;
@@ -126,7 +74,6 @@ static int filmos_running;
 static unsigned int filmos_init()
 {
     if (!is_camera("7D", "2.0.6")) return 1;
-    config_from_core();
     filmroll_init();
     int task=task_create("film_main", 0x1e, 0x2000, filmroll_task, 0);
     if (task<=0) return 1;
@@ -141,21 +88,12 @@ static unsigned int filmos_deinit()
     return 0;
 }
 
-/* What the core's shim (filmhook.c) calls. Not static: the module loader
- * hands these to the core by name once the module is loaded. */
-int filmos_key_used(struct event *event)
-{
-    return handle_filmroll_keys(event) == 0;
-}
-
-int filmos_menu_open()
-{
-    return filmroll_menu_requested();
-}
-
+/* The 7D core binds this symbol when the module is loaded. */
 int filmos_overlays()
 {
-    return filmos_running && fos_fonts_ready() && !gui_menu_shown() && !is_movie_mode() && !ml_menu_pending;
+    return filmos_running && fos_fonts_ready() && !gui_menu_shown() && !is_movie_mode() &&
+           !ml_menu_pending && (ui_running ||
+               (!canon_quick_opening() && hud_enabled && roll_loaded && (hud_showing || canon_handover)));
 }
 
 static unsigned int filmos_raw_key(unsigned int arg)

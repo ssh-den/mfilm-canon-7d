@@ -1,6 +1,5 @@
 /* EOS 7D.206 adapter for M-Film (GPL-2.0).
- * filmroll: a Canon camera as a film camera (built into this ML fork).
- * Made on the EOS M; 100D, 650D, 700D and others build from the same code.
+ * Derived from the upstream Film OS camera adapter. Loaded as an ML module.
  *
  * The camera side of the film OS (ml-dev/filmos): rolls, the roll log the
  * PC lab reads, film settings, the viewfinder HUD, and the fos_port_*
@@ -10,8 +9,7 @@
  *    up, home and its settings pages. Native ML is available from Settings.
  *  - an SLR-viewfinder HUD in LiveView: aperture scale with meter needle,
  *    red LED readout that lights on half-shutter, frame counter, wind
- *  - PLAY opens the prints the camera has developed, never Canon's
- *    playback of undeveloped frames
+ *  - PLAY opens the roll viewer when Play lock is enabled
  *  - a finished roll is developed in the camera (fos_dev.c): its RAWs
  *    become prints in ML/DARKROOM, shown on their own palettes
  *  - manual lenses: the f-stop is dialled in and logged for the lab
@@ -26,8 +24,7 @@
  */
 
 #ifdef MODULE
-/* ML/modules/filmos.mo is built for one camera (fork/module/Makefile), so it
- * takes that camera's definitions, as autoexec.bin does */
+/* The module and core share the 7D.206 platform definitions. */
 #include "internals.h"
 #include "internals-common.h"
 #include "features.h"
@@ -57,8 +54,7 @@
 #include <battery.h>
 #endif
 #ifdef MODULE
-/* built as ML/modules/filmos.mo (build_fork.sh --module): the core keeps
- * these three names for its shim (filmhook.c), the module's own go by others */
+/* Keep the module's implementation names distinct from the core API. */
 #define handle_filmroll_keys     fr_handle_keys
 #define filmroll_menu_requested  fr_menu_requested
 #define filmroll_overlays_active fr_overlays_active
@@ -433,9 +429,8 @@ static void apply_film(int index)
  * shows the exposure the frame will get: at a slow film's ISO (loading a roll
  * sets it) and with a manual lens stopped down, too dark to focus. Off, Canon
  * shows LiveView at a brightness you can focus by, whatever the exposure. It
- * is Canon's own setting (PROP_LIVE_VIEW_VIEWTYPE), which Magic Lantern's
- * ExpSim item sets; that menu is gone (see the top), so it is here. Until it
- * is set here Canon's is left as it is; once it is, it goes back in when it
+     * is Canon's own setting (PROP_LIVE_VIEW_VIEWTYPE). Until it is set here
+     * Canon's is left as it is; once it is, it goes back in when it
  * changes, when LiveView starts and after a roll is loaded. The HUD's meter
  * is Canon's reading of the exposure (get_ae_value), not of the picture on
  * the screen; that Canon keeps metering with it off wants checking on a
@@ -614,10 +609,14 @@ static void record_frame(int file_number)
     char when[32];
     char aperture[8];
     char line[112];
+    char prefix[5];
+    /* Canon can change the prefix between shots, including within a roll. */
+    const char *reported = get_file_prefix();
+    fos_copy(prefix, sizeof(prefix), strlen(reported) == 4 ? reported : "IMG_", 4);
     format_now(when, sizeof(when));
     fos_format_fstop(aperture, sizeof(aperture), current_fstop());
     snprintf(line, sizeof(line), "%d  %s%04d.CR2  %s  f/%s\n",
-             frames_shot, get_file_prefix(), file_number, when, aperture);
+             frames_shot, prefix, file_number, when, aperture);
     log_append(line);
 
     /* the warning at loading is easy to miss, and then a whole roll can't
@@ -1822,7 +1821,7 @@ void fos_port_stat(const struct fos_stat *s)
 
 /* ---------------------------------------------------------------- viewfinder HUD */
 
-static volatile int hud_showing = 0;    /* HUD drawn on the LiveView screen */
+static volatile int hud_showing = 0;    /* the HUD or top plate is visible */
 
 static int hud_visible()
 {
