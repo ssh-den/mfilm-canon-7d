@@ -563,9 +563,15 @@ void shelf_key(int k)
             else start_loading();
             break;
         case FK_MENU:
-            if (ui_from() == SCR_HOME) ui_go(SCR_HOME, HOME_FILM, GO_POP);
+        {
+            int from = ui_from();
+#ifdef CONFIG_7D_206
+            if (from == SCR_NONE || from == SCR_BOOT) from = SCR_HOME;
+#endif
+            if (from == SCR_HOME) ui_go(SCR_HOME, HOME_FILM, GO_POP);
             else ui_leave();
             break;
+        }
         case FK_PLAY:
             if (has_samples)
             {
