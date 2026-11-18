@@ -135,7 +135,7 @@ void dark_draw();
 
 /* developing the rolls queued with dark_queue (arg unused) */
 void dark_queue_clear();
-void dark_queue_add(int roll);
+void dark_queue_add(int roll, int unload);
 void develop_enter(int arg);
 void develop_leave();
 void develop_key(int key);
@@ -145,6 +145,8 @@ void develop_draw();
 /* prints: arg is a roll number (0: the newest developed); PRINTS_ALONE
  * or-ed in when opened by PLAY from the camera */
 #define PRINTS_ALONE 0x10000
+#define PRINTS_RESUME 0x20000
+int dark_selected_roll(void);
 void prints_enter(int arg);
 void prints_leave();
 void prints_key(int key);

@@ -128,6 +128,7 @@ static int dk_hints_for = -1;           /* the hints show what SET does on this 
 enum { DEL_NONE, DEL_WHICH, DEL_PRINTS, DEL_WHOLE,
        ASK_DEVELOP };                   /* the same sheet asks before developing: SET goes, INFO changes the print size */
 static int dk_ask, dk_said;             /* the sheet up; what it said, while it goes down */
+static int develop_only_roll;           /* SET on the current roll, or 0 for the INFO batch */
 static int dk_doing;                    /* DEL_PRINTS or DEL_WHOLE: confirmed */
 static struct spring dk_sheet;
 static int dk_sheet_drawn;
@@ -189,15 +190,23 @@ static void dark_hints()
     else snprintf(dev, sizeof(dev), "Develop all");
     struct hint h[5];
     int n = 0;
+#ifdef CONFIG_7D_206
+    if (r && can_develop_in_camera(r)) h[n++] = (struct hint) { "SET", "Develop" };
+    else
+#endif
     if (r && is_waiting(r)) h[n++] = (struct hint) { "SET", marked[dk_sel] ? "Unmark" : "Mark" };
     else if (r && has_prints(r)) h[n++] = (struct hint) { "SET", "Prints" };
     if (count_waiting(0)) h[n++] = (struct hint) { FOS_KEY_INFO, dev };
     if (r && !r->in_camera) h[n++] = (struct hint) { "<", "Delete" };
+#ifdef CONFIG_7D_206
+    h[n++] = (struct hint) { "TRASH", "Shoot" };
+#else
     h[n++] = (struct hint) { "PLAY", "Prints" };
+#endif
     h[n++] = (struct hint) { "MENU", "Back" };
     ui_bg_restore(0, HINTS_Y, FOS_W, FOS_H - HINTS_Y);
     ui_hints(h, n);
-    dk_hints_for = dk_sel * 2 + marked[dk_sel];
+    dk_hints_for = dk_sel * 2 + (dm && nrolls ? marked[dk_sel] : 0);
 }
 
 void dark_enter(int arg)
@@ -220,16 +229,26 @@ void dark_enter(int arg)
     dk_scroll.v = 0;
     dk_hints_for = -1;
     dk_ask = dk_doing = 0;
+    develop_only_roll = 0;
     dk_sheet.x = dk_sheet.v = 0;
     dk_sheet_drawn = 0;
     dark_bake();
 }
 
-void dark_queue_clear();
-void dark_queue_add(int roll);
+int dark_selected_roll(void)
+{
+    return dm && dk_sel >= 0 && dk_sel < nrolls ? rolls[dk_sel].number : 0;
+}
+
 #ifdef CONFIG_7D_206
 static int roll_to_unload;
 #endif
+
+static int develop_selected(int i, int marked_count)
+{
+    return is_waiting(&rolls[i]) && (develop_only_roll ? rolls[i].number == develop_only_roll
+                                                       : !marked_count || marked[i]);
+}
 
 static void dark_develop()
 {
@@ -237,17 +256,12 @@ static void dark_develop()
     int nm = count_marked();
     dark_queue_clear();
     for (int i = nrolls - 1; i >= 0; i--)
-        if (is_waiting(&rolls[i]) && (!nm || marked[i]))
+        if (develop_selected(i, nm))
         {
-            if (rolls[i].in_camera)
-            {
-#ifdef CONFIG_7D_206
-                roll_to_unload = rolls[i].number;
-#else
-                fos_port_action(FA_REWIND, 0, 0);
+#ifndef CONFIG_7D_206
+            if (rolls[i].in_camera) fos_port_action(FA_REWIND, 0, 0);
 #endif
-            }
-            dark_queue_add(rolls[i].number);
+            dark_queue_add(rolls[i].number, rolls[i].in_camera);
         }
     ui_go(SCR_DEVELOP, 0, GO_FADE);
 }
@@ -295,19 +309,27 @@ void dark_key(int k)
         case FK_SET: case FK_RIGHT: case FK_LEFT:
             if (!r) break;
             /* LEFT: Delete roll, never the one in the camera */
-            if (r->in_camera && (k == FK_LEFT || !can_develop_in_camera(r)))
+            if (r->in_camera && (k == FK_LEFT || (k == FK_SET && !can_develop_in_camera(r))))
                 ui_toast(ui_realistic() ? "Still in the camera " T_MDASH " rewind it first"
                                         : "Still in the camera " T_MDASH " finish it on the Roll page first");
+#ifdef CONFIG_7D_206
+            else if (r->in_camera && k == FK_SET)
+            {
+                develop_only_roll = r->number;
+                dk_ask = ASK_DEVELOP;
+            }
+#endif
             else if (k == FK_LEFT) dk_ask = has_prints(r) || r->jpegs ? DEL_WHICH : DEL_WHOLE;   /* no prints: no choice */
             else if (is_waiting(r) && k == FK_SET) marked[dk_sel] ^= 1;
-            else if (has_prints(r)) ui_go(SCR_PRINTS, r->number, GO_FADE);
+            else if (r->shot > 0) ui_go(SCR_PRINTS, r->number, GO_FADE);
             break;
         case FK_INFO:
+            develop_only_roll = 0;
             if (count_waiting(0)) dk_ask = ASK_DEVELOP;
             else ui_toast(nrolls ? "Nothing to develop" : "No rolls yet");
             break;
         case FK_PLAY:
-            ui_go(SCR_PRINTS, r && has_prints(r) ? r->number : 0, GO_FADE);
+            ui_go(SCR_PRINTS, r ? r->number : 0, GO_FADE);
             break;
         case FK_MENU:
             ui_go(SCR_HOME, HOME_DARK, GO_POP);
@@ -397,7 +419,7 @@ static void dark_sheet()
         int unload = 0;
 #endif
         for (int i = 0; i < nrolls; i++)
-            if (is_waiting(&rolls[i]) && (!nm || marked[i]))
+            if (develop_selected(i, nm))
             {
 #ifdef CONFIG_7D_206
                 if (rolls[i].in_camera) unload = rolls[i].number;
@@ -414,6 +436,12 @@ static void dark_sheet()
 #endif
         if (low_battery) snprintf(t, sizeof(t), "The battery is low. Develop?");
         else snprintf(t, sizeof(t), "Develop %d roll%s?", n, n == 1 ? "" : "s");
+#ifdef CONFIG_7D_206
+        if (!unload && ui_roll.loaded)
+            snprintf(b, sizeof(b), "%d frame%s " T_DOT " %s " T_DOT " Roll %03d stays loaded",
+                     frames, frames == 1 ? "" : "s", eta, ui_roll.number);
+        else
+#endif
         snprintf(b, sizeof(b), "%d frame%s " T_DOT " %s: %s " T_DOT " %s", frames, frames == 1 ? "" : "s", names[size], what[size], eta);
         snprintf(alt, sizeof(alt), "Size: %s", names[size]);
         ui_sheet3(dk_sheet.x, t, b, "Develop", alt, "Cancel");
@@ -531,9 +559,6 @@ static const char *cur_gone;            /* the roll's film, if it has left the s
 static struct fos_dev *dev;
 static int frame_t0;
 static int total_frames, done_frames, failed_frames, rolls_done;
-#ifdef CONFIG_7D_206
-static int failures_before_roll;
-#endif
 static int jpeg_frames;                 /* of the failed ones, shot as JPEG */
 static int finished, asking_stop;
 static struct spring stop_sheet;
@@ -565,7 +590,16 @@ void dark_queue_clear()
     roll_to_unload = 0;
 #endif
 }
-void dark_queue_add(int roll) { if (dark_mem() && nqueue < MAX_ROLLS) queue[nqueue++] = roll; }
+void dark_queue_add(int roll, int unload)
+{
+    if (!dark_mem() || nqueue >= MAX_ROLLS) return;
+    queue[nqueue++] = roll;
+#ifdef CONFIG_7D_206
+    if (unload) roll_to_unload = roll;
+#else
+    (void)unload;
+#endif
+}
 
 static int file_exists(const char *path)
 {
@@ -585,28 +619,27 @@ static void frame_jpeg_path(char *path, int size, const struct fos_lab_frame *fr
 }
 
 #ifdef CONFIG_7D_206
-static void unload_developed_roll(int sheet_ok)
+static int handoff_current_roll(void)
 {
-    if (cur_roll != roll_to_unload) return;
+    if (!roll_to_unload) return 1;
     struct fos_roll camera;
     fos_port_roll(&camera);
-    if (!camera.loaded || camera.number != cur_roll) return;
-
-    int complete = sheet_ok && failed_frames == failures_before_roll &&
-                   nframes > 0 && camera.shot == nframes;
-    for (int i = 0; complete && i < nframes; i++)
+    int ri = roll_index(roll_to_unload);
+    if (!camera.loaded || camera.number != roll_to_unload || ri < 0 ||
+        camera.shot <= 0 || camera.shot != rolls[ri].shot)
     {
-        char jpeg[160];
-        const struct fos_lab_frame *frame = &dm->frames[i];
-        frame_jpeg_path(jpeg, sizeof(jpeg), frame);
-        complete = frame->no == i + 1 && !frame->missing && jpeg[0] && file_exists(jpeg);
+        fos_port_log("darkroom: handoff refused; active roll changed");
+        return 0;
     }
-    if (complete) fos_port_action(FA_REWIND, cur_roll, nframes);
+    fos_port_action(FA_REWIND, camera.number, camera.shot);
     fos_port_roll(&camera);
-    if (!camera.loaded)
-        ui_toast("Roll unloaded");
-    else
-        ui_toast("Roll still loaded");
+    if (camera.loaded)
+    {
+        fos_port_log("darkroom: handoff refused; camera busy");
+        return 0;
+    }
+    fos_port_log("darkroom: roll unloaded before developing; stopped work can resume");
+    return 1;
 }
 #endif
 
@@ -664,9 +697,6 @@ static void next_job()
         if (!roll_ready)
         {
             cur_roll = queue[qi];
-#ifdef CONFIG_7D_206
-            failures_before_roll = failed_frames;
-#endif
             int ri = roll_index(cur_roll);
             cur_film = ri >= 0 ? rolls[ri].film : 0;
             cur_gone = ri >= 0 && rolls[ri].gone[0] ? rolls[ri].gone : 0;
@@ -788,9 +818,6 @@ static void next_job()
         fos_lab_print_path(path, sizeof(path), cur_roll, 0);
         int sheet_ok = fos_dev_sheet(path, cur_film, pp, nframes);
         if (!sheet_ok) fos_port_log("darkroom: can't write the contact sheet");
-#ifdef CONFIG_7D_206
-        unload_developed_roll(sheet_ok);
-#endif
         rolls_done++;
         qi++;
         roll_ready = 0;
@@ -882,6 +909,13 @@ void develop_enter(int arg)
 {
     if (!dark_mem()) nqueue = 0;
     rescan();
+#ifdef CONFIG_7D_206
+    fos_port_roll(&ui_roll);
+    char selection[96];
+    snprintf(selection, sizeof(selection), "darkroom: queue %d rolls, active %03d, unload %03d, mode %s",
+             nqueue, ui_roll.loaded ? ui_roll.number : 0, roll_to_unload, ui_realistic() ? "Realistic" : "Basic");
+    fos_port_log(selection);
+#endif
     total_frames = done_frames = failed_frames = rolls_done = 0;
     jpeg_frames = 0;
     for (int i = 0; i < nqueue; i++)
@@ -904,6 +938,14 @@ void develop_enter(int arg)
     img = fos_port_alloc(IMG_W * IMG_H);
     dry = fos_port_alloc(DRY_N * DRY_W * DRY_H);
     if (ghost) memset(ghost, 255, GHOST_W * GHOST_H);
+#ifdef CONFIG_7D_206
+    if (!finished && ghost && img && dry && !handoff_current_roll())
+    {
+        nqueue = 0;
+        finished = 1;
+        ui_toast("Camera busy. Return and try again.");
+    }
+#endif
     dv_dirty = ~0;
     bar_drawn = -1;
     last_doing = -1;
@@ -918,6 +960,7 @@ void develop_enter(int arg)
 
 void develop_leave()
 {
+    if (!finished) fos_port_log("darkroom: stopped; completed prints kept, remaining frames wait");
     if (dev) { fos_dev_free(dev); dev = 0; }
     if (!finished) fos_port_action(FA_BUSY, 0, 0);
     if (dv_dimmed) { dv_dimmed = 0; fos_port_action(FA_DIM, 0, 0); }
@@ -1212,7 +1255,11 @@ static void develop_hints()
         x += ui_keycap(x, base, "SET") + 8;
         x += fos_text(cv, &fos_font_sm, x, base - 1, "See the prints", SL_TEXT2, OPAQUE, 0) + 22;
         x += ui_keycap(x, base, "MENU") + 8;
-        fos_text(cv, &fos_font_sm, x, base - 1, "Darkroom", SL_TEXT2, OPAQUE, 0);
+        x += fos_text(cv, &fos_font_sm, x, base - 1, "Darkroom", SL_TEXT2, OPAQUE, 0) + 22;
+#ifdef CONFIG_7D_206
+        x += ui_keycap(x, base, "TRASH") + 8;
+        fos_text(cv, &fos_font_sm, x, base - 1, "Shoot", SL_TEXT2, OPAQUE, 0);
+#endif
     }
     else
     {
@@ -1276,9 +1323,71 @@ static int pv_info, pv_info_t;
 static int pv_frames;                   /* frames on the roll */
 static int pv_have;                     /* pv_print holds a picture */
 static int pv_dirty;                    /* the picture or the overlay changed */
+static uint8_t pv_ready[FOS_MAX_FRAMES];
+static int pv_top;                      /* first visible row, three frames per row */
+static int pv_saved_roll, pv_saved_cur, pv_saved_mode, pv_saved_alone;
+
+enum { STRIP_COLS = 3, STRIP_ROWS = 2, STRIP_Y = 118, STRIP_STEP = 150 };
+
+static int strip_follow(void)
+{
+    int old = pv_top, row = (pv_cur - 1) / STRIP_COLS;
+    if (row < pv_top) pv_top = row;
+    if (row >= pv_top + STRIP_ROWS) pv_top = row - STRIP_ROWS + 1;
+    return old != pv_top;
+}
+
+static void strip_cell(int i, int *x, int *y)
+{
+    *x = 28 + (i % STRIP_COLS) * 224;
+    *y = STRIP_Y + (i / STRIP_COLS - pv_top) * STRIP_STEP;
+}
+
+/* Reuse the BMP's small RGB thumbnail, not a RAW decode or a new contact
+ * sheet on disk. One 216-colour preview palette serves all visible frames;
+ * opening a frame still uses its original full print palette. */
+static int pv_strip_load(void)
+{
+    memset(&pv_print, 0, sizeof(pv_print));
+    char path[64];
+    memset(pv_ready, 0, sizeof(pv_ready));
+    for (int i = 0; i < pv_frames; i++)
+    {
+        fos_lab_print_path(path, sizeof(path), rolls[pv_roll].number, i + 1);
+        pv_ready[i] = file_exists(path);
+    }
+    pv_print.px = fos_port_alloc(FOS_W * FOS_H);
+    if (!pv_print.px) { fos_port_log("prints: strip image allocation failed"); return 0; }
+    memset(pv_print.px, PX_PANEL, FOS_W * FOS_H);
+    for (int i = 0; i < 216; i++)
+    {
+        pv_print.pal[i][0] = (i / 36) * 51;
+        pv_print.pal[i][1] = (i / 6 % 6) * 51;
+        pv_print.pal[i][2] = (i % 6) * 51;
+    }
+    uint8_t *thumb = fos_port_alloc(FOS_THUMB_SIZE);
+    if (!thumb) { fos_port_log("prints: no memory for strip thumbnails"); return 1; }
+    for (int i = pv_top * STRIP_COLS; i < pv_frames && i < (pv_top + STRIP_ROWS) * STRIP_COLS; i++)
+    {
+        if (!pv_ready[i]) continue;
+        fos_lab_print_path(path, sizeof(path), rolls[pv_roll].number, i + 1);
+        if (!fos_print_thumb(path, thumb)) { pv_ready[i] = 2; continue; }
+        int x0, y0;
+        strip_cell(i, &x0, &y0);
+        for (int y = 0; y < 96; y++)
+            for (int x = 0; x < 180; x++)
+            {
+                const uint8_t *p = thumb + ((y * FOS_THUMB_H / 96) * FOS_THUMB_W + x * FOS_THUMB_W / 180) * 3;
+                pv_print.px[(y0 + 14 + y) * FOS_W + x0 + 14 + x] =
+                    1 + ((p[0] + 25) / 51) * 36 + ((p[1] + 25) / 51) * 6 + (p[2] + 25) / 51;
+            }
+    }
+    fos_port_free(thumb);
+    return 1;
+}
 
 #define FADE_MS 180
-#define INFO_H  44
+#define INFO_H  66
 
 /* Looking into a print (a frame developed medium or large has a zoom file,
  * the picture at that size in the print's own palette): the wheel goes in
@@ -1344,7 +1453,7 @@ static void pv_zoom_view(int *fx, int *fy, int *step, int *vw, int *vh)
 static int prints_roll_at(int from, int dir)
 {
     for (int i = from; i >= 0 && i < nrolls; i += dir)
-        if (has_prints(&rolls[i])) return i;
+        if (rolls[i].shot > 0) return i;
     return -1;
 }
 
@@ -1355,9 +1464,17 @@ static void pv_load()
     pv_have = 0;
     if (pv_roll < 0) return;
     const struct fos_lab_roll *r = &rolls[pv_roll];
+    if (!pv_mode)
+    {
+        pv_have = pv_strip_load();
+        pv_note[0] = 0;
+        pv_zoom_close();
+        pv_dirty = 1;
+        return;
+    }
     fos_lab_print_path(path, sizeof(path), r->number, pv_mode ? pv_cur : 0);
     pv_have = fos_print_load(path, &pv_print);
-    if (!pv_have)
+    if (!pv_have && (pv_mode ? pv_cur >= 1 && pv_cur <= FOS_MAX_FRAMES && pv_ready[pv_cur - 1] : r->sheet))
     {
         char msg[96];
         snprintf(msg, sizeof(msg), "prints: can't load %s", path);
@@ -1378,18 +1495,22 @@ static void pv_palette(int k)
 
 void prints_enter(int arg)
 {
-    pv_alone = (arg & PRINTS_ALONE) != 0;
-    arg &= ~PRINTS_ALONE;
+    int resume = (arg & PRINTS_RESUME) != 0;
+    pv_alone = resume ? pv_saved_alone : (arg & PRINTS_ALONE) != 0;
+    arg = resume ? pv_saved_roll : arg & ~(PRINTS_ALONE | PRINTS_RESUME);
     pv_have = 0;
     dark_mem();
     rescan();
     int i = arg ? roll_index(arg) : -1;
-    if (i < 0 || !has_prints(&rolls[i])) i = prints_roll_at(0, 1);
+    if (i < 0 || rolls[i].shot <= 0) i = prints_roll_at(0, 1);
     pv_roll = i;
-    pv_mode = 0;
-    pv_cur = 1;
-    pv_frames = i >= 0 ? rolls[i].shot : 0;
-    if (i >= 0) fos_lab_frames(rolls[i].number, pv_meta, FOS_MAX_FRAMES);
+    pv_mode = resume ? pv_saved_mode : 0;
+    pv_frames = i >= 0 ? fos_clamp(rolls[i].shot, 0, FOS_MAX_FRAMES) : 0;
+    pv_cur = fos_clamp(resume ? pv_saved_cur : 1, 1, pv_frames > 0 ? pv_frames : 1);
+    pv_top = 0;
+    strip_follow();
+    if (dm) memset(pv_meta, 0, sizeof(dm->meta));
+    if (pv_mode && i >= 0) fos_lab_frames(rolls[i].number, pv_meta, FOS_MAX_FRAMES);
     pv_have = 0;
     pv_state = i >= 0 ? PV_WAIT : PV_NONE;
     pv_t = 0;
@@ -1401,8 +1522,8 @@ void prints_enter(int arg)
         ui_bg_plain();
         ui_to_bg(1);
         ui_status_bar("PRINTS");
-        fos_text_c(cv, &fos_font_lg, 360, 220, "No prints yet", C_TEXT, OPAQUE, 0);
-        fos_text_c(cv, &fos_font_sm, 360, 248, "Develop a roll in the darkroom and its prints show here.", C_TEXT3, OPAQUE, 0);
+        fos_text_c(cv, &fos_font_lg, 360, 220, "No rolls yet", C_TEXT, OPAQUE, 0);
+        fos_text_c(cv, &fos_font_sm, 360, 248, "Load a film to collect frames. Canon photos stay in DCIM.", C_TEXT3, OPAQUE, 0);
         struct hint h[] = { { "SET", "Darkroom" }, { "MENU", "Back" } };
         ui_hints(h, 2);
         ui_to_bg(0);
@@ -1412,6 +1533,10 @@ void prints_enter(int arg)
 
 void prints_leave()
 {
+    pv_saved_roll = pv_roll >= 0 ? rolls[pv_roll].number : 0;
+    pv_saved_cur = pv_cur;
+    pv_saved_mode = pv_mode;
+    pv_saved_alone = pv_alone;
     pv_zoom_close();
     if (pv_have) fos_print_free(&pv_print);
     pv_have = 0;
@@ -1468,12 +1593,13 @@ void prints_key(int k)
     {
         case FK_LEFT: case FK_RIGHT: case FK_UP: case FK_DOWN:
         {
-            int d = k == FK_LEFT ? -1 : k == FK_RIGHT ? 1 : k == FK_UP ? -6 : 6;
+            int d = k == FK_LEFT ? -1 : k == FK_RIGHT ? 1 : k == FK_UP ? -STRIP_COLS : STRIP_COLS;
             if (pv_mode && (k == FK_UP || k == FK_DOWN)) break;
             int to = pv_cur + d;
+            if (k == FK_DOWN && to > n && (pv_cur - 1) / STRIP_COLS < (n - 1) / STRIP_COLS) to = n;
             if (to < 1 || to > n) break;
             pv_cur = to;
-            if (pv_mode) pv_go(NEXT_LOAD);
+            if (pv_mode || strip_follow()) pv_go(NEXT_LOAD);
             else pv_dirty = 1;
             break;
         }
@@ -1503,15 +1629,17 @@ void prints_key(int k)
                 if (to >= 0)
                 {
                     pv_roll = to;
-                    pv_frames = rolls[to].shot;
+                    pv_frames = fos_clamp(rolls[to].shot, 0, FOS_MAX_FRAMES);
                     pv_cur = 1;
-                    fos_lab_frames(rolls[to].number, pv_meta, FOS_MAX_FRAMES);
+                    pv_top = 0;
                     pv_go(NEXT_LOAD);
                 }
             }
             break;
         case FK_SET:
             pv_mode = !pv_mode;
+            if (pv_mode) fos_lab_frames(rolls[pv_roll].number, pv_meta, FOS_MAX_FRAMES);
+            else strip_follow();
             pv_go(NEXT_LOAD);
             break;
         case FK_INFO:
@@ -1520,7 +1648,7 @@ void prints_key(int k)
             pv_dirty = 1;
             break;
         case FK_MENU:
-            if (pv_mode) { pv_mode = 0; pv_go(NEXT_LOAD); }
+            if (pv_mode) { pv_mode = 0; strip_follow(); pv_go(NEXT_LOAD); }
             else pv_go(NEXT_BACK);
             break;
         case FK_PLAY:
@@ -1575,7 +1703,7 @@ int prints_update(int dt)
             return 1;
         case PV_SHOW:
             /* the details go after a while on their own */
-            if (pv_info && pv_info_t < 3000)
+            if (pv_mode && pv_info && pv_info_t < 3000)
             {
                 pv_info_t += dt;
                 if (pv_info_t >= 3000) { pv_info = 0; pv_note[0] = 0; pv_dirty = 1; ui_damage_all(); }
@@ -1583,14 +1711,6 @@ int prints_update(int dt)
             return 0;
     }
     return 0;
-}
-
-static void sheet_cell(int i, int *x, int *y)
-{
-    int rows = (pv_frames + 5) / 6;
-    int y0 = (FOS_PRINT_H - rows * FOS_THUMB_H) / 2;
-    *x = (i % 6) * FOS_THUMB_W + FOS_SHEET_FX;
-    *y = y0 + (i / 6) * FOS_THUMB_H + FOS_SHEET_FY;
 }
 
 static void frame_rect(int x, int y, int w, int h, uint8_t ix)
@@ -1605,6 +1725,45 @@ static void frame_rect(int x, int y, int w, int h, uint8_t ix)
         cv->px[j * cv->pitch + x] = cv->px[j * cv->pitch + x + 1] = ix;
         cv->px[j * cv->pitch + x + w - 1] = cv->px[j * cv->pitch + x + w - 2] = ix;
     }
+}
+
+static void draw_waiting_roll(void)
+{
+    const struct fos_lab_roll *r = &rolls[pv_roll];
+    if (pv_have) memcpy(cv->px, pv_print.px, FOS_W * FOS_H);
+    else memset(cv->px, PX_PANEL, FOS_W * FOS_H);
+    char title[64];
+    snprintf(title, sizeof(title), "ROLL %03d  %s", r->number, r->gone[0] ? r->gone : fos_films[r->film].name);
+    const struct fos_font *heading = &fos_font_lg;
+    if (fos_text_w(heading, title, 40) > FOS_W - 48) heading = &fos_font_md;
+    if (fos_text_w(heading, title, 40) > FOS_W - 48) heading = &fos_font_sm;
+    ui_photo_text(heading, 360, 38, title, 1, 1);
+    snprintf(title, sizeof(title), "%s  %d / %d developed",
+             r->in_camera ? "IN CAMERA" : is_developed(r) ? "DEVELOPED" : r->developed >= pv_frames ? "PRINTS READY" : r->developed ? "PARTLY DEVELOPED" : "WAITING", r->developed, pv_frames);
+    ui_photo_text(&fos_font_sm, 360, 67, title, 0, 1);
+    ui_photo_text(&fos_font_xs, 360, 94, "ARROWS Frames / scroll    WHEEL Rolls    SET Open", 0, 1);
+    for (int i = pv_top * STRIP_COLS; i < pv_frames && i < (pv_top + STRIP_ROWS) * STRIP_COLS; i++)
+    {
+        int x, y;
+        strip_cell(i, &x, &y);
+        if (!pv_have || pv_ready[i] != 1)
+            for (int row = y + 14; row < y + 110; row++) memset(cv->px + row * cv->pitch + x + 14, PX_BLACK, 180);
+        frame_rect(x, y, 208, 134, i + 1 == pv_cur ? PX_AMBER : PX_LINE);
+        /* Perforations connect the cells into folded rows of film. */
+        for (int hole = 0; hole < 10; hole++)
+            for (int h = 0; h < 4; h++)
+            {
+                memset(cv->px + (y + 5 + h) * cv->pitch + x + 10 + hole * 19, PX_AMBER2, 8);
+                memset(cv->px + (y + 113 + h) * cv->pitch + x + 10 + hole * 19, PX_AMBER2, 8);
+            }
+        snprintf(title, sizeof(title), "%02d  %s", i + 1, pv_ready[i] == 2 ? "Unreadable" : pv_ready[i] ? "Developed" : "Waiting");
+        ui_photo_text(&fos_font_xs, x + 104, y + 129, title, i + 1 == pv_cur, 1);
+    }
+    snprintf(title, sizeof(title), "Frame %d / %d   Rows %d-%d / %d", pv_cur, pv_frames, pv_top + 1,
+             fos_clamp(pv_top + STRIP_ROWS, 1, (pv_frames + 2) / 3), (pv_frames + 2) / 3);
+    ui_photo_text(&fos_font_xs, 360, 426, title, 1, 1);
+    ui_photo_text(&fos_font_xs, 360, 451, "MENU Back    PLAY Back    TRASH Shoot", 0, 1);
+    ui_photo_text(&fos_font_xs, 360, 473, ui_roll.loaded ? "Shutter: shoot, then return to this view" : "NO FILM: new Canon photos stay in DCIM, outside rolls", 0, 1);
 }
 
 void prints_draw()
@@ -1656,13 +1815,16 @@ void prints_draw()
         }
     }
     if (zoomed) {}
+    else if (!pv_mode)
+        draw_waiting_roll();
     else if (pv_have) memcpy(cv->px, pv_print.px, FOS_W * FOS_H);
     else
     {
-        memset(cv->px, PX_BLACK, FOS_W * FOS_H);
+        memset(cv->px, PX_PANEL, FOS_W * FOS_H);
         char b[64];
-        snprintf(b, sizeof(b), pv_mode ? "Frame %d was not developed" : "No contact sheet", pv_cur);
+        snprintf(b, sizeof(b), "Frame %d awaits development", pv_cur);
         ui_photo_text(&fos_font_md, 360, 244, b, 0, 1);
+        ui_photo_text(&fos_font_sm, 360, 310, "MENU Roll    PLAY Darkroom    TRASH Shoot", 0, 1);
         /* and why, when the darkroom couldn't */
         const struct fos_lab_frame *m = pv_mode && pv_cur >= 1 && pv_cur <= FOS_MAX_FRAMES ? &pv_meta[pv_cur - 1] : 0;
         if (m && m->missing)
@@ -1681,34 +1843,29 @@ void prints_draw()
         }
     }
     const struct fos_lab_roll *r = &rolls[pv_roll];
-    if (!pv_mode)
+    if (pv_mode && pv_info)
     {
-        int x, y;
-        sheet_cell(pv_cur - 1, &x, &y);
-        frame_rect(x - 4, y - 4, FOS_SHEET_FW + 8, FOS_SHEET_FH + 8, PX_AMBER);
-    }
-    if (pv_info)
-    {
-        char b[96], c[64];
+        char b[96];
+        /* The roll identity stays in its own header; metadata and controls
+         * have separate lines, never one long row over the photograph. */
+        if (!zoomed)
+        {
+            for (int y = 0; y < 66; y++) memset(cv->px + y * cv->pitch, PX_PANEL, FOS_W);
+            snprintf(b, sizeof(b), "ROLL %03d  %s", r->number, r->gone[0] ? r->gone : fos_films[r->film].name);
+            ui_photo_text(&fos_font_md, 360, 28, b, 1, 1);
+            snprintf(b, sizeof(b), "%s  Frame %d / %d", pv_have ? "DEVELOPED" : "WAITING", pv_cur, pv_frames);
+            ui_photo_text(&fos_font_xs, 360, 53, b, 0, 1);
+        }
         int y = FOS_H - INFO_H;
         memset(&cv->px[y * cv->pitch], PX_PANEL, FOS_W * INFO_H);
         memset(&cv->px[y * cv->pitch], PX_LINE, FOS_W);
         const struct fos_lab_frame *m = pv_cur >= 1 && pv_cur <= FOS_MAX_FRAMES ? &pv_meta[pv_cur - 1] : 0;
-        snprintf(b, sizeof(b), "ROLL %03d", r->number);
-        int x = 20 + ui_photo_text(&fos_font_xs, 20, y + 28, b, 1, 0);
-        snprintf(b, sizeof(b), "%s " T_DOT " frame %d of %d", fos_films[r->film].name, pv_cur, pv_frames);
-        x += 14 + ui_photo_text(&fos_font_sm, x + 14, y + 28, b, 0, 0);
         const char *hint = pv_note[0] ? pv_note : zoomed ? "ARROWS MOVE   SET OUT" :
-                           !pv_mode ? "SET OPEN   WHEEL ROLLS" : pv_znsteps ? "WHEEL ZOOM   SET SHEET" : "SET SHEET   " FOS_KEY_INFO " HIDE";
-        int hint_w = fos_text_w(&fos_font_xs, hint, pv_note[0] ? 40 : 0);
-        if (m && m->when[0])
-        {
-            snprintf(c, sizeof(c), "%s%s%s", m->when, m->fstop[0] ? "  f/" : "", m->fstop);
-            /* with the big UI's fonts it could run into the hint: then it is left out */
-            if (!FOS_BIG(0, 1) || x + 14 + fos_text_w(&fos_font_sm, c, 0) <= FOS_W - 20 - hint_w - 16)
-                ui_photo_text(&fos_font_sm, x + 14, y + 28, c, 0, 0);
-        }
-        ui_photo_text(&fos_font_xs, FOS_W - 20, y + 28, hint, pv_note[0] != 0, 2);
+                           pv_znsteps ? "WHEEL Zoom   SET Roll   MENU Back" : "LEFT/RIGHT Frames   SET Roll   MENU Back";
+        if (m && m->when[0]) snprintf(b, sizeof(b), "%s%s%s", m->when, m->fstop[0] ? "  f/" : "", m->fstop);
+        else snprintf(b, sizeof(b), "TRASH Shoot    PLAY Back    " FOS_KEY_INFO " Hide details");
+        ui_photo_text(&fos_font_xs, 360, y + 24, b, 0, 1);
+        ui_photo_text(&fos_font_xs, 360, y + 52, hint, pv_note[0] != 0, 1);
     }
     ui_damage_all();
 }

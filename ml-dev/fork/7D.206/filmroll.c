@@ -35,6 +35,7 @@
 #include "gui.h"        /* ahead of dryos.h's gui-common.h, as in autoexec.bin */
 #endif
 #include <dryos.h>
+#include <arm-mcr.h>
 #include <module.h>
 #include <property.h>
 #include <menu.h>
@@ -133,23 +134,93 @@ static volatile int last_key_ms = 0;    /* when a button other than the shutter 
 
 /* ---------------------------------------------------------------- debug log */
 
-/* field-test trace in ML/FILMROLL.LOG; turn off in System once things work */
+/* GUI, UI and film tasks enqueue on the ML DIGIC. The film task alone
+ * writes the batch to the card. No formatting or file I/O under IRQ mask. */
+#define DEBUG_SLOTS 32
+#define DEBUG_LINE 192
+static char debug_lines[DEBUG_SLOTS][DEBUG_LINE];
+static volatile unsigned debug_head, debug_tail, debug_lost;
+
+static void debug_push(const char *line, int bytes)
+{
+    uint32_t irq = cli();
+    asm volatile("" ::: "memory");
+    if (debug_head - debug_tail == DEBUG_SLOTS)
+    {
+        debug_tail++;
+        debug_lost++;
+    }
+    memcpy(debug_lines[debug_head % DEBUG_SLOTS], line, bytes);
+    debug_head++;
+    asm volatile("" ::: "memory");
+    sei(irq);
+}
+
+static int debug_pop(char *line)
+{
+    uint32_t irq = cli();
+    asm volatile("" ::: "memory");
+    int available = debug_tail != debug_head;
+    if (available)
+    {
+        memcpy(line, debug_lines[debug_tail % DEBUG_SLOTS], DEBUG_LINE);
+        debug_tail++;
+    }
+    asm volatile("" ::: "memory");
+    sei(irq);
+    return available;
+}
+
 static void dbg(const char *fmt, ...)
 {
     if (!debug_log || ml_shutdown_requested)
         return;
 
-    char buf[192];
+    char buf[DEBUG_LINE];
     int n = snprintf(buf, sizeof(buf), "%7d  ", get_ms_clock());
+    if (n < 0 || n >= (int)sizeof(buf) - 2) return;
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
+    vsnprintf(buf + n, sizeof(buf) - n - 1, fmt, ap);
     va_end(ap);
+    buf[sizeof(buf) - 2] = 0;
+    n = strlen(buf);
+    buf[n++] = '\n';
+    buf[n++] = 0;
+    debug_push(buf, n);
+}
+
+static int debug_card_idle(void)
+{
+    return debug_log && !ml_shutdown_requested && !lens_info.job_state &&
+           !get_halfshutter_pressed() && get_ms_clock() - last_shot_ms >= 500;
+}
+
+static void debug_flush(void)
+{
+    static int next_flush;
+    static unsigned reported_lost;
+    int now = get_ms_clock();
+    if (!debug_card_idle() || now - next_flush < 0) return;
+    /* Producers publish these 32-bit counters on the same processor. */
+    if (debug_head == debug_tail && debug_lost == reported_lost) return;
+    next_flush = now + 250;
 
     FILE *f = FIO_CreateFileOrAppend("ML/FILMROLL.LOG");
-    if (!f)
-        return;
-    my_fprintf(f, "%s\n", buf);
+    if (!f) return;
+    char line[DEBUG_LINE];
+    unsigned lost = debug_lost;
+    if (lost != reported_lost && debug_card_idle())
+    {
+        snprintf(line, sizeof(line), "%7d  trace: dropped %d queued lines\n", now, (int)(lost - reported_lost));
+        int bytes = strlen(line);
+        if (FIO_WriteFile(f, line, bytes) == bytes) reported_lost = lost;
+    }
+    for (int i = 0; i < 16 && debug_card_idle() && debug_pop(line); i++)
+    {
+        int bytes = strlen(line);
+        if (FIO_WriteFile(f, line, bytes) != bytes) break;
+    }
     FIO_CloseFile(f);
 }
 
@@ -265,6 +336,13 @@ static void read_back_log()
         if (next) *next++ = 0;
         if (!strncmp(line, "loaded = ", 9))
             fos_copy(loaded_at, sizeof(loaded_at), line + 9, 16);
+        else if (!strncmp(line, "# rewound ", 10))
+        {
+            /* The roll log is written before changing the CFG state. Recover
+             * a handoff even if power went off while Darkroom was still open. */
+            roll_loaded = 0;
+            need_wind = 0;
+        }
         else if (line[0] >= '0' && line[0] <= '9')
         {
             /* "12  IMG_0012.CR2  2026-08-08 09:15:15  f/2.8" */
@@ -577,32 +655,66 @@ static void record_frame(int file_number)
 static void poll_frames()
 {
     static int busy_since = -1;
-    static int pending_file, logging_ms, job_at_counter;
+    static int job_at_counter;
+    static int previous_poll = -1, max_poll_gap;
+    static int unassigned_file;
 
     /* Native movie mode remains available; a clip is not a RAW film frame. */
-    if (!roll_loaded || is_movie_mode())
+    if (is_movie_mode())
     {
-        if (roll_loaded) last_file_number = get_shooting_card()->file_number;
+        last_file_number = get_shooting_card()->file_number;
         busy_since = -1;
-        pending_file = 0;
+        job_at_counter = 0;
+        previous_poll = -1;
+        max_poll_gap = 0;
+        unassigned_file = 0;
         return;
     }
 
     int job = lens_info.job_state;
     int observed_at = get_ms_clock();
+    if (previous_poll >= 0 && (job || busy_since >= 0))
+        max_poll_gap = MAX(max_poll_gap, observed_at - previous_poll);
+    previous_poll = observed_at;
     if (job && busy_since < 0) busy_since = observed_at;
-    if (!job)
-    {
-        if (pending_file)
-            dbg("capture: file %d job at counter %d, job busy sampled %d ms, ML frame logging %d ms",
-                pending_file, job_at_counter, busy_since < 0 ? -1 : observed_at - busy_since, logging_ms);
-        busy_since = -1;
-        pending_file = 0;
-    }
-
     int now = get_shooting_card()->file_number;
-    if (now == last_file_number)
+    if (!roll_loaded)
+    {
+        if (now != last_file_number)
+        {
+            dbg("capture: no film loaded, Canon file %d; excluded from rolls", now);
+            last_file_number = now;
+            unassigned_file = now;
+            if (!job_at_counter) job_at_counter = job;
+        }
+        if (!job)
+        {
+            if (unassigned_file)
+            {
+                if (busy_since >= 0)
+                    dbg("capture: unassigned file %d job at counter %d, job busy sampled %d ms, poll gap %d ms; no roll journal",
+                        unassigned_file, job_at_counter, observed_at - busy_since, max_poll_gap);
+                last_shot_ms = observed_at;
+            }
+            unassigned_file = 0;
+            busy_since = -1;
+            max_poll_gap = job_at_counter = 0;
+        }
         return;
+    }
+    unassigned_file = 0;
+    if (now == last_file_number)
+    {
+        if (!job) { busy_since = -1; max_poll_gap = 0; job_at_counter = 0; }
+        return;
+    }
+    /* Canon advances the counter before finishing the CR2. Journal the
+     * entire series after its job ends instead of competing for card I/O. */
+    if (job || ml_shutdown_requested)
+    {
+        if (job && !job_at_counter) job_at_counter = job;
+        return;
+    }
 
     int prev = last_file_number;
     last_file_number = now;
@@ -634,9 +746,12 @@ static void poll_frames()
         }
         record_frame((prev + i - 1) % 9999 + 1);
     }
-    pending_file = now;
-    logging_ms = get_ms_clock() - last_shot_ms;
-    job_at_counter = job;
+    dbg("capture: file %d job at counter %d, job busy sampled %d ms, ML frame logging %d ms, poll gap %d ms",
+        now, job_at_counter, busy_since < 0 ? -1 : observed_at - busy_since,
+        get_ms_clock() - last_shot_ms, max_poll_gap);
+    busy_since = -1;
+    max_poll_gap = 0;
+    job_at_counter = 0;
 }
 
 /* ---------------------------------------------------------------- the film OS host */
@@ -654,6 +769,8 @@ static int ui_last_palette = 0;
 
 enum { AFTER_APPLY = 1, AFTER_CANON_MENU = 2, AFTER_ML_MENU = 4 };
 static volatile int ml_menu_pending;
+static volatile int capture_return_pending;
+static int capture_return_since, capture_return_idle;
 static int film_display_wake(void);
 static int ui_power_held;
 
@@ -765,6 +882,14 @@ static void palette_canon()
  * is left alone until the camera is restarted, and the camera works as it
  * did on 0.1.5, where the hold was taken once. 1 if it was taken again. */
 static int hold_given_up = 0;
+static int debug_stage(const char *stage, int start);
+
+static void film_hold_front_buffer(void)
+{
+    int start = get_ms_clock();
+    canon_gui_disable_front_buffer();
+    debug_stage("BMP hold", start);
+}
 
 static int hold_again(const char *who)
 {
@@ -779,7 +904,7 @@ static int hold_again(const char *who)
             "not taking it again until a restart (#73)", who, lost);
         return 0;
     }
-    canon_gui_disable_front_buffer();
+    film_hold_front_buffer();
     if (times++ % 50 == 0) dbg("%s: Canon took its screen back, held again (seen %d time%s so far)", who, times, times == 1 ? "" : "s");
     return 1;
 }
@@ -811,8 +936,11 @@ static int film_ui_open()
 {
     NotifyBoxHide();
     if (lv) bmp_off();
+    int t0 = get_ms_clock();
+    dbg("nav: Canon mode %d -> requested %d, display %d front-held %d", CURRENT_GUI_MODE,
+        GUIMODE_ML_MENU, DISPLAY_IS_ON, canon_gui_front_buffer_disabled());
     SetGUIRequestMode(GUIMODE_ML_MENU);
-    int t0 = get_ms_clock(), landed = 0;
+    int landed = 0;
     for (int i = 0; i < 30; i++)
     {
         msleep(10);
@@ -824,7 +952,7 @@ static int film_ui_open()
         dbg("film os: opening refused, mode %d expected %d display %d",CURRENT_GUI_MODE,GUIMODE_ML_MENU,DISPLAY_IS_ON);
         return 0;
     }
-    canon_gui_disable_front_buffer();
+    film_hold_front_buffer();
     CancelDateTimer();
     clrscr();
     bmp_on();
@@ -840,6 +968,8 @@ static void film_ui_close()
      * the screen: off it before Canon's palette comes back, or it shows in
      * Canon's colours while the GUI mode changes (#19). In LiveView bmp_off
      * hides it. */
+    dbg("nav: release M-Film mode %d, abort key %d, next action %d, front-held %d",
+        CURRENT_GUI_MODE, ui_abort_key, ui_after, canon_gui_front_buffer_disabled());
     if (!lv) clrscr();
     palette_canon();
     if (lv) bmp_off();
@@ -851,7 +981,7 @@ static void film_ui_close()
     canon_handover = 0;
     if (HUD_HOLDS && hud_enabled && roll_loaded && DISPLAY_IS_ON && !is_movie_mode() && !(ui_after & (AFTER_CANON_MENU|AFTER_ML_MENU)))
     {
-        canon_gui_disable_front_buffer();
+        film_hold_front_buffer();
         clrscr();
         canon_handover = 1;
         if (lv) bmp_on();
@@ -862,6 +992,12 @@ static void film_ui_close()
     clrscr();
     redraw();
     if (lv) bmp_on();
+}
+
+void fos_port_navigation(int from, int to, int arg, int how)
+{
+    dbg("nav: M-Film screen %d -> %d, arg %d transition %d, Canon mode %d state %d",
+        from, to, arg, how, CURRENT_GUI_MODE, gui_state);
 }
 
 static void screen_dim(int on);
@@ -894,6 +1030,14 @@ static void ui_task(int open)
     if (ui_after & AFTER_ML_MENU) ml_menu_pending=1;
     film_ui_close();
     ui_running = 0;
+    if (!ui_after && fos_ui_can_resume() &&
+        (ui_abort_key == BGMT_PRESS_HALFSHUTTER || ui_abort_key == BGMT_PRESS_FULLSHUTTER))
+    {
+        capture_return_since = get_ms_clock();
+        capture_return_idle = 0;
+        capture_return_pending = 1;
+        dbg("nav: view suspended for shutter; return pending");
+    }
     hud_dirty = 1;
     DBG_STATE("film os: closed");
     if (stat_all.frames)
@@ -933,6 +1077,7 @@ static void open_ui(int screen)
         NotifyBox(5000, "Film OS: ML/DATA/" FOS_FONT_FILE " is missing");
         return;
     }
+    capture_return_pending = 0;
     ui_running = 1;
     /* the same priority as ML's own menu redraw: Canon's tasks still come
      * first, and the film OS rests between frames */
@@ -940,6 +1085,31 @@ static void open_ui(int screen)
         ui_running=0;
         dbg("film os: task creation failed");
     }
+}
+
+/* Never hold Canon's GUI or touch the card while it is capturing. Resume
+ * only a read-only view, after release and a stable idle shooting screen. */
+static void capture_return_step(void)
+{
+    if (!capture_return_pending || ui_running) return;
+    int now = get_ms_clock();
+    if (ml_shutdown_requested || is_movie_mode() || gui_menu_shown() || ml_menu_pending ||
+        now - capture_return_since > 30000)
+    {
+        capture_return_pending = 0;
+        dbg("nav: capture return cancelled (timeout/menu/shutdown/movie)");
+        return;
+    }
+    if (get_halfshutter_pressed() || lens_info.job_state || !DISPLAY_IS_ON || !shooting_screen())
+    {
+        capture_return_idle = 0;
+        return;
+    }
+    if (!capture_return_idle) capture_return_idle = now ? now : 1;
+    if (now - capture_return_idle < 500) return;
+    capture_return_pending = 0;
+    dbg("nav: capture finished; restoring roll view after %d ms", now - capture_return_since);
+    open_ui(FOS_OPEN_RESUME);
 }
 
 /* ---- what the film OS asks of the camera (see fos.h) */
@@ -1646,6 +1816,15 @@ static int plate_visible()
         && !is_movie_mode() && !ui_running && !ml_menu_pending && !gui_menu_shown();
 }
 
+/* Don't take the BMP lock on the plain shooting screen while Canon reports
+ * a capture job. A real menu or a recent Canon key still gets its handoff. */
+static int hud_wait_for_capture(void)
+{
+    return lens_info.job_state != 0 && CURRENT_GUI_MODE == 0 && gui_state == GUISTATE_IDLE &&
+           !ui_running && !ml_menu_pending && !gui_menu_shown() &&
+           (!last_key_ms || get_ms_clock() - last_key_ms > 250);
+}
+
 /* Magic Lantern's own LiveView overlays never draw: the film OS (or
  * Canon's clean screen) is all you see */
 int filmroll_overlays_active()
@@ -1935,7 +2114,7 @@ static void hud_step()
         gone_since = 0;
         if (!canon_held)
         {
-            canon_gui_disable_front_buffer();
+            film_hold_front_buffer();
             if (!plate) clrscr();           /* the plate covers all of it */
             canon_held = 1;
             hud_all_stale();
@@ -2195,9 +2374,16 @@ static unsigned int lv_key(unsigned int key)
 int handle_filmroll_keys(struct event *event)
 {
     int key = module_translate_key(event->param, MODULE_KEY_PORTABLE);
+    if (key == MODULE_KEY_PRESS_HALFSHUTTER || key == MODULE_KEY_PRESS_FULLSHUTTER ||
+        key == MODULE_KEY_UNPRESS_HALFSHUTTER || key == MODULE_KEY_UNPRESS_FULLSHUTTER ||
+        key == MODULE_KEY_MENU || key == MODULE_KEY_PLAY || key == MODULE_KEY_TRASH || key == MODULE_KEY_Q)
+        dbg("nav: key raw %d portable %d, UI %d Canon mode %d job %d",
+            event->param, key, ui_running, CURRENT_GUI_MODE, lens_info.job_state);
     if (key && key != MODULE_KEY_PRESS_HALFSHUTTER && key != MODULE_KEY_UNPRESS_HALFSHUTTER &&
         key != MODULE_KEY_PRESS_FULLSHUTTER && key != MODULE_KEY_UNPRESS_FULLSHUTTER)
     {
+        if (capture_return_pending) dbg("nav: capture return cancelled by key %d", key);
+        capture_return_pending = 0;
         int now = get_ms_clock();
         last_key_ms = now ? now : 1;
     }
@@ -2336,28 +2522,76 @@ static void startup_task()
         open_ui(FOS_OPEN_SHELF);
 }
 
-/* Everything runs from one task that waits for ML to finish booting, so
- * nothing touches Canon's GUI state before it exists: start screen first,
- * then frame logging and the HUD. */
+static void debug_state_sample(void)
+{
+    if (!debug_log) return;
+    static int old_job = -1, old_mode = -1, old_flags = -1, old_state = -1;
+    int job = lens_info.job_state, mode = CURRENT_GUI_MODE, state = gui_state;
+    int display = !!DISPLAY_IS_ON, held = !!canon_gui_front_buffer_disabled();
+    int flags = display | (held << 1) | (!!ui_running << 2) | (!!dev_busy << 3);
+    if (job == old_job && mode == old_mode && flags == old_flags && state == old_state) return;
+    dbg("state: Canon job %d (was %d), mode %d state %d display %d front-held %d, UI %d develop %d file %d",
+        job, old_job, mode, state, display, held, ui_running, dev_busy, get_shooting_card()->file_number);
+    old_job = job;
+    old_mode = mode;
+    old_flags = flags;
+    old_state = state;
+}
+
+static int debug_stage(const char *stage, int start)
+{
+    int now = get_ms_clock();
+    if (now - start >= 250)
+    {
+        dbg("stall: %s took %d ms, job %d mode %d UI %d, file %d",
+            stage, now - start, lens_info.job_state, CURRENT_GUI_MODE, ui_running,
+            get_shooting_card()->file_number);
+        return get_ms_clock();
+    }
+    return now;
+}
+
+/* The main task starts after ML is ready and owns HUD, frame logging and
+ * debug file writes. The page renderer has a separate UI task. */
 static void filmroll_task()
 {
     while (!ml_started)
         msleep(100);
     dbg("main: started");
+    if (debug_log)
+    {
+        const struct card_info *card = get_shooting_card();
+        dbg("diagnostics: 7D.206 format 2, shooting card %s cluster %d, quality %x, review %d, LV %d",
+            card->drive_letter, card->cluster_size, pic_quality, image_review_time, lv);
+    }
+    debug_flush();
 
     load_fonts();
     load_films();
+    if (roll_loaded && !recent_valid)
+    {
+        update_log_path();
+        read_back_log();
+        if (!roll_loaded) dbg("roll: recovered unloaded state from rewind log");
+    }
     dbg("read: %s", card_buffer() ? "card buffer ready" : "no card buffer: the darkroom can't read the card");
     screen_dim_recover();
+    last_file_number = get_shooting_card()->file_number;
     startup_task();
     film_capture_check();
 
     int last_alive = 0;
     TASK_LOOP
     {
+        debug_state_sample();
+        int stage = get_ms_clock();
         poll_frames();
+        stage = debug_stage("frame journal", stage);
         filmos_save_if_dirty();
+        stage = debug_stage("config save", stage);
         native_menu_step();
+        stage = debug_stage("native menu", stage);
+        capture_return_step();
 
         /* the roll has just been finished: once the camera is quiet, ask
          * whether to develop it now or load a new one first */
@@ -2371,16 +2605,22 @@ static void filmroll_task()
             }
         }
         else if (end_due && !ROLL_FINISHED) end_due = 0;
-        if (k % 2 == 0)
+        if (!hud_wait_for_capture())
         {
-            hud_step();                     /* every 100 ms */
-            flip_step(0);
-            expsim_step();
-        }
+            if (k % 2 == 0)
+            {
+                hud_step();                 /* every 100 ms */
+                stage = debug_stage("HUD", stage);
+                flip_step(0);
+                expsim_step();
+                stage = debug_stage("display updates", stage);
+            }
 #if !FOS_LV_ONLY
-        else if (plate_overdrawn())
-            hud_step();                     /* Canon drew over the plate: at once */
+            else if (plate_overdrawn())
+                hud_step();                 /* Canon drew over the plate: at once */
 #endif
+        }
+        stage = debug_stage("screen dispatch", stage);
 
         int now = get_ms_clock();
         if (now - last_alive > 60000)
@@ -2389,7 +2629,10 @@ static void filmroll_task()
                 roll_number, roll_loaded, frames_shot, roll_exposures, last_file_number);
             last_alive = now;
         }
+        debug_flush();
+        stage = debug_stage("debug file flush", stage);
         msleep(50);
+        debug_stage("sleep/wakeup", stage);
     }
 }
 

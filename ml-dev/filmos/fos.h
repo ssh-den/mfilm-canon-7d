@@ -170,7 +170,7 @@ struct fos_roll
 enum { FOS_OPEN_SHELF, FOS_OPEN_HOME, FOS_OPEN_BOOT, FOS_OPEN_BOOT_LV,
        FOS_OPEN_PRINTS,     /* PLAY: the latest prints */
        FOS_OPEN_END,        /* the roll has just been finished */
-       FOS_OPEN_DARKROOM };
+    FOS_OPEN_DARKROOM, FOS_OPEN_RESUME };
 
 /* ---------------------------------------------------------------- the port */
 
@@ -200,6 +200,9 @@ void fos_port_roll(struct fos_roll *r);
 int  fos_port_get(int setting);
 void fos_port_set(int setting, int value);
 void fos_port_action(int action, int a, int b);
+#ifdef CONFIG_7D_206
+void fos_port_navigation(int from, int to, int arg, int how);
+#endif
 void fos_port_clock(char *buf, int size);   /* "14:32" */
 int  fos_port_lens_manual();
 const char *fos_port_lens_name();
@@ -266,6 +269,7 @@ int  fos_hud_spans(int style, int y, int x[4]);
 
 void fos_ui_init();
 void fos_ui_run(int screen);
+int fos_ui_can_resume(void);       /* read-only Darkroom/roll view saved at exit */
 /* the port saw something else draw on rows y0 .. y1 of the screen: they are put back at once */
 void fos_ui_overdrawn(int y0, int y1);
 

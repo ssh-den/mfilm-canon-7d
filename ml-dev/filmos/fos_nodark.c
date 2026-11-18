@@ -41,13 +41,14 @@ static void nd_key(int k)
 }
 
 void dark_enter(int arg) { nd_bake(); }
+int dark_selected_roll(void) { return 0; }
 void dark_free() {}
 void dark_key(int k) { nd_key(k); }
 int  dark_update(int dt) { return 0; }
 void dark_draw() { nd_draw(); }
 
 void dark_queue_clear() {}
-void dark_queue_add(int roll) {}
+void dark_queue_add(int roll, int unload) { (void)roll; (void)unload; }
 void develop_enter(int arg) { nd_bake(); }
 void develop_leave() {}
 void develop_key(int k) { nd_key(k); }

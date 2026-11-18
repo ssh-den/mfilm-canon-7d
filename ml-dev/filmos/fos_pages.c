@@ -61,7 +61,7 @@ static void film_card()
         /* an empty chamber */
         fos_rrect_line(cv, cx - 40, CARD_Y + 60, 80, 132, 14, 2, FC(RAMP_GRAY, 48), OPAQUE);
         fos_text_c(cv, &fos_font_lg, cx, CARD_Y + 240, "No film", C_TEXT, OPAQUE, 0);
-        fos_text_c(cv, &fos_font_sm, cx, CARD_Y + 266, "Load a roll to start shooting", C_TEXT3, OPAQUE, 0);
+        fos_text_c(cv, &fos_font_sm, cx, CARD_Y + 266, "Canon photos stay outside rolls", C_TEXT3, OPAQUE, 0);
         return;
     }
 
@@ -239,7 +239,7 @@ static void home_row(int i, int selected)
     {
         case HA_LOAD:
             title = "Load film";
-            snprintf(sub, sizeof(sub), "Choose a stock and start shooting");
+            snprintf(sub, sizeof(sub), "New photos join the roll after loading");
             break;
         case HA_ROLL:
             icon = ICON_ROLL;
@@ -406,7 +406,7 @@ static const struct item advanced_items[] =
     { "Hide Canon's graphics", IT_TOGGLE, FS_CANON_OFF, 0, 0, "Canon's exposure scale and icons stay off the viewfinder. Its focus frame goes too." },
     { "Screen colour", IT_PAGE, PAGE_SCREEN, 0, 0, "Match these colours to what you see around you." },
     { "Screen orientation", IT_CHOICE, FS_SCR_FLIP, flip_choices, 4, "Auto follows the hinge. Set one if the screen shows the wrong way round." },
-    { "PLAY shows prints only", IT_TOGGLE, FS_PLAYLOCK, 0, 0, "Canon's playback would show frames the darkroom hasn't developed." },
+    { "PLAY opens roll viewer", IT_TOGGLE, FS_PLAYLOCK, 0, 0, "Off: Canon playback also shows photos taken without film." },
     { "Re-apply film settings", IT_ACTION, FA_REAPPLY, 0, 0, "After changing picture style, white balance or ISO by hand." },
     { "Debug log", IT_TOGGLE, FS_DEBUG, 0, 0, "Writes ML/FILMROLL.LOG for troubleshooting." },
 };
@@ -1157,6 +1157,16 @@ void roll_key(int k)
             rewind_t = ui_realistic() ? 0 : 1500;       /* Basic: no rewinding to watch */
             rewind_then = k == FK_SET;
             rewind_number = ui_roll.number;
+#ifdef CONFIG_7D_206
+            if (rewind_then && !ui_realistic() && ui_roll.shot > 0)
+            {
+                rewinding = 0;
+                dark_queue_clear();
+                dark_queue_add(rewind_number, 1);
+                ui_go(SCR_DEVELOP, 0, GO_FADE);
+                return;
+            }
+#endif
             fos_port_action(FA_REWIND, 0, 0);
         }
         else if (k == FK_MENU) asking_rewind = 0;
@@ -1194,7 +1204,7 @@ int roll_update(int dt)
             if (rewind_then)
             {
                 dark_queue_clear();
-                dark_queue_add(rewind_number);
+                dark_queue_add(rewind_number, 0);
                 ui_go(SCR_DEVELOP, 0, GO_FADE);
             }
             else ui_go(SCR_SHELF, 1, GO_PUSH);

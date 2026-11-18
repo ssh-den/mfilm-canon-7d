@@ -552,6 +552,9 @@ static void boot_draw(int t)
 
 void ui_go(int to, int arg, int how)
 {
+#ifdef CONFIG_7D_206
+    fos_port_navigation(screen, to, arg, how);
+#endif
     /* a screen changes at once (GO_PUSH, GO_POP: deeper into the menus and
      * back), or through a short dip to black (GO_FADE) where the setting
      * has it. The fade keeps what is on screen now; that buffer is only
@@ -597,6 +600,9 @@ int ui_from()
 void ui_leave()
 {
     if (leaving) return;
+#ifdef CONFIG_7D_206
+    fos_port_navigation(screen, SCR_NONE, 0, 0);
+#endif
     leaving = 1;
     leave_t = 0;
 }
@@ -748,6 +754,13 @@ static int is_repeating(int k)
     return k == FK_LEFT || k == FK_RIGHT || k == FK_UP || k == FK_DOWN;
 }
 
+static int resume_screen, resume_arg, resume_from;
+
+int fos_ui_can_resume(void)
+{
+    return resume_screen == SCR_DARK || resume_screen == SCR_PRINTS;
+}
+
 void fos_ui_run(int open)
 {
     int t_open = fos_port_ms();
@@ -780,6 +793,11 @@ void fos_ui_run(int open)
     {
         switch (open)
         {
+            case FOS_OPEN_RESUME:
+                screen_from = resume_from;
+                if (resume_screen == SCR_PRINTS) { screen = SCR_PRINTS; prints_enter(PRINTS_RESUME); }
+                else { screen = SCR_DARK; dark_enter(resume_arg); }
+                break;
             case FOS_OPEN_HOME:     screen = SCR_HOME; home_enter(0); break;
             case FOS_OPEN_PRINTS:   screen = SCR_PRINTS; prints_enter(PRINTS_ALONE); break;
             case FOS_OPEN_END:      screen = SCR_ROLL; roll_enter(1); break;
@@ -817,6 +835,10 @@ void fos_ui_run(int open)
                 continue;
             }
             if (is_repeating(k)) { held_key = k; held_since = now; held_last = now; }
+#ifdef CONFIG_7D_206
+            /* TRASH always returns to shooting, including during a page fade. */
+            if (k == FK_HOME) { ui_leave(); continue; }
+#endif
             if (leaving || enter_t < ENTER_LEN) continue;
             screen_key(k);
         }
@@ -930,6 +952,9 @@ void fos_ui_run(int open)
             frame_stats(t_present - t_draw, fos_port_ms() - t_present);
         fos_port_sleep(moving || in_tr ? frame_rest(now) : 40);
     }
+    resume_screen = !leaving && (screen == SCR_DARK || screen == SCR_PRINTS) ? screen : SCR_NONE;
+    resume_arg = screen == SCR_DARK ? dark_selected_roll() : 0;
+    resume_from = screen_from;
     if (stat.frames || stat.open_ms) fos_port_stat(&stat);     /* the last part second */
     if (screen == SCR_SHELF) shelf_leave();
     if (screen == SCR_DEVELOP) develop_leave();
