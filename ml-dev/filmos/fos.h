@@ -147,6 +147,7 @@ enum
     FA_BUSY,            /* a = 1: long work (developing) begins, keep the camera awake; 0: done */
     FA_DIM,             /* a = 1: the screen's backlight to its lowest while the camera works by itself; 0: back */
     FA_ML_MENU,         /* local 7D.206: leave and open native Magic Lantern */
+    FA_CANON_QUICK,     /* leave and open Canon's Quick Control screen */
 };
 
 /* the films loaded last (FS_RECENT), newest first */

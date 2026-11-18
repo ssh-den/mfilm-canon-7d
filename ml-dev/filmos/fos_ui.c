@@ -611,7 +611,11 @@ void ui_leave()
 
 static void screen_key(int k)
 {
-    if (k == FK_ACTIONS && screen != SCR_PRINTS) k = FK_SET;
+    if (k == FK_ACTIONS && screen != SCR_PRINTS
+#ifdef CONFIG_7D_206
+        && screen != SCR_HOME
+#endif
+       ) k = FK_SET;
     /* the top dial is the wheel everywhere but on the shelf, where it changes shelves */
     if (screen != SCR_SHELF && (k == FK_DIAL_L || k == FK_DIAL_R))
         k = k == FK_DIAL_L ? FK_WHEEL_L : FK_WHEEL_R;

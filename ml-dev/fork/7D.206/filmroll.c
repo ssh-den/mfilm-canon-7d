@@ -767,12 +767,27 @@ static int ui_after = 0;                /* what to do once it has let go */
 static int ui_last_mode_poke = 0;
 static int ui_last_palette = 0;
 
-enum { AFTER_APPLY = 1, AFTER_CANON_MENU = 2, AFTER_ML_MENU = 4 };
+enum { AFTER_APPLY = 1, AFTER_CANON_MENU = 2, AFTER_ML_MENU = 4, AFTER_CANON_QUICK = 8 };
 static volatile int ml_menu_pending;
+static volatile unsigned int canon_quick_at;
 static volatile int capture_return_pending;
 static int capture_return_since, capture_return_idle;
 static int film_display_wake(void);
 static int ui_power_held;
+
+static void canon_quick_handoff(void)
+{
+    unsigned int now = get_ms_clock();
+    canon_quick_at = now ? now : (unsigned int)-1;
+}
+
+/* Give Canon time to open the dialog. The idle check owns the HUD decision
+ * once Quick Control is open. If Canon ignores Q, recover the HUD. */
+static int canon_quick_opening(void)
+{
+    unsigned int requested = canon_quick_at;
+    return requested && (unsigned int)get_ms_clock() - requested < 700;
+}
 
 /* Film OS consumes navigation keys, so Canon does not see that activity.
  * Hold its existing auto-off permit while the foreground UI owns the screen. */
@@ -979,7 +994,8 @@ static void film_ui_close()
      * show between ours (#19, #64). hud_step gives it back if ours doesn't
      * come; Canon's menu (AFTER_CANON_MENU) gets it now. */
     canon_handover = 0;
-    if (HUD_HOLDS && hud_enabled && roll_loaded && DISPLAY_IS_ON && !is_movie_mode() && !(ui_after & (AFTER_CANON_MENU|AFTER_ML_MENU)))
+    if (HUD_HOLDS && hud_enabled && roll_loaded && DISPLAY_IS_ON && !is_movie_mode() &&
+        !(ui_after & (AFTER_CANON_MENU | AFTER_ML_MENU | AFTER_CANON_QUICK)))
     {
         film_hold_front_buffer();
         clrscr();
@@ -1029,6 +1045,7 @@ static void ui_task(int open)
 
     if (ui_after & AFTER_ML_MENU) ml_menu_pending=1;
     film_ui_close();
+    if (ui_after & AFTER_CANON_QUICK) canon_quick_handoff();
     ui_running = 0;
     if (!ui_after && fos_ui_can_resume() &&
         (ui_abort_key == BGMT_PRESS_HALFSHUTTER || ui_abort_key == BGMT_PRESS_FULLSHUTTER))
@@ -1066,6 +1083,8 @@ static void ui_task(int open)
     screen_dim(0);
     if (ui_after & AFTER_CANON_MENU)
         fake_simple_button(BGMT_MENU);
+    else if (ui_after & AFTER_CANON_QUICK)
+        fake_simple_button(BGMT_Q);
 }
 
 static void open_ui(int screen)
@@ -1714,6 +1733,9 @@ void fos_port_action(int action, int a, int b)
         case FA_CANON_MENU:
             ui_after |= AFTER_CANON_MENU;
             break;
+        case FA_CANON_QUICK:
+            ui_after |= AFTER_CANON_QUICK;
+            break;
         case FA_ML_MENU:
             ui_after |= AFTER_ML_MENU;
             break;
@@ -2077,8 +2099,9 @@ static void hud_step()
     static int was_visible = -1;
     static int plate_drawn = 0;
 
-    int plate = plate_visible();
-    int visible = hud_visible() || plate;
+    int canon_quick = canon_quick_opening();
+    int plate = !canon_quick && plate_visible();
+    int visible = !canon_quick && (hud_visible() || plate);
     if (visible * 2 + plate != was_visible)
     {
         dbg("hud: visible %d plate %d (enabled %d roll %d lv %d movie %d ui %d)",
@@ -2155,7 +2178,8 @@ static void hud_step()
          * done (#17). 20 s at most, should the camera never say it has finished. */
         int longest = saving ? 20000 : 4000;
         int unasked = visible && !HUD_HOLDS;        /* the EOS M's setting turned off */
-        if (ui_running || ml_menu_pending || gui_menu_shown() || asked || unasked || (now - gone_since > 700 && !shooting) || now - gone_since > longest)
+        if (ui_running || ml_menu_pending || gui_menu_shown() || canon_quick || asked || unasked ||
+            (now - gone_since > 700 && !shooting) || now - gone_since > longest)
         {
             dbg("hud: Canon's screen given back after %d ms%s", now - gone_since,
                 ui_running ? " (to the film OS)" : asked ? " (a button)" : unasked ? " (not hidden any more)" :
@@ -2172,7 +2196,8 @@ static void hud_step()
     {
 #if !FOS_LV_ONLY
         uint8_t *vram = bmp_vram();
-        if (vram && display_idle() && !ui_running && !ml_menu_pending && !gui_menu_shown()) fos_hud_plate_clear(vram, BMPPITCH, &hud_pal);
+        if (vram && !canon_quick && display_idle() && !ui_running && !ml_menu_pending && !gui_menu_shown())
+            fos_hud_plate_clear(vram, BMPPITCH, &hud_pal);
 #endif
         plate_drawn = 0;
 #if !FOS_LV_ONLY
@@ -2316,6 +2341,9 @@ static int ui_key(struct event *event, int key)
 
 static unsigned int lv_key(unsigned int key)
 {
+    if (key == MODULE_KEY_Q && (hud_visible() || plate_visible()))
+        canon_quick_handoff();
+
     /* what used to open the Magic Lantern menu opens home instead */
     if (key == MODULE_KEY_TRASH || key == MODULE_KEY_TOUCH_2_FINGER)
     {

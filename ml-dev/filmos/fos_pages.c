@@ -144,8 +144,14 @@ static void home_bake()
     ui_bg_plain();
     ui_to_bg(1);
     ui_status_bar("HOME");
-    struct hint h[] = { { "^v", "Select" }, { "SET", "Open" }, { FOS_KEY_INFO, "Settings" }, { "PLAY", "Prints" }, { "MENU", "Camera" } };
-    ui_hints(h, 5);
+    struct hint h[] = { { "^v", "Select" }, { "SET", "Open" }, { FOS_KEY_INFO, "Settings" }, { "PLAY", "Prints" },
+#ifdef CONFIG_7D_206
+                        { "Q", "Quick control" }, { "MENU", "Shoot" },
+#else
+                        { "MENU", "Camera" },
+#endif
+    };
+    ui_hints(h, sizeof(h) / sizeof(*h));
     film_card();
     ui_to_bg(0);
 }
@@ -190,6 +196,12 @@ void home_key(int k)
         case FK_INFO:
             home_open(HA_SETTINGS);
             break;
+#ifdef CONFIG_7D_206
+        case FK_ACTIONS:
+            fos_port_action(FA_CANON_QUICK, 0, 0);
+            ui_leave();
+            break;
+#endif
         case FK_MENU: case FK_HOME:
             ui_leave();
             break;
