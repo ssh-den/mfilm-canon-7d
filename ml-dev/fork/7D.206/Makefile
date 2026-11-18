@@ -12,7 +12,7 @@ include $(TOP_DIR)/modules/Makefile
 .DEFAULT_GOAL := $(BUILD_DIR)/module_complete
 
 # GCC 14 can keep fos_copy out of line under -Os.
-$(BUILD_DIR)/fos_dark.o: CFLAGS += -Wno-error=inline
+$(BUILD_DIR)/fos_dark.o $(BUILD_DIR)/fos_lab.o: CFLAGS += -Wno-error=inline
 
 $(BUILD_DIR)/fos-libm.a: $(CORE_BUILD)/newlib-libm.a | $(BUILD_DIR)
 	$(OBJCOPY) --redefine-sym __errno=fos_errno $< $@

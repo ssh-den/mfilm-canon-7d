@@ -101,7 +101,7 @@ static int tagged(const char *dir, int roll)
 /* a file, or an empty folder; 1 if it's still there */
 static int remove_logged(const char *path)
 {
-    if (!fos_port_remove(path)) return 0;
+    if (!fos_port_abort() && !fos_port_remove(path)) return 0;
     char msg[200];
     snprintf(msg, sizeof(msg), "lab: can't remove %s", path);
     fos_port_log(msg);
@@ -174,7 +174,13 @@ int fos_lab_dcim_dir(char *buf, int size, int roll, int film, const char *when)
     for (int k = 0; k < DAY_NAMES; k++)
     {
         day_dir(buf, size, card, k, m, d, film_name);
-        if (dir_exists(buf)) continue;
+        if (dir_exists(buf))
+        {
+            /* Empty export directories remain on Canon after deletion.
+             * Reuse one only after listing it empty; never retag other data. */
+            if (fos_port_list(buf, first_only, 0) == 0 && make_tagged(buf, roll, film)) return 0;
+            continue;
+        }
         if (k >= DAY_LONG) return make_tagged(buf, roll, film) ? 0 : -1;
         if (make_tagged(buf, roll, film) && dir_exists(buf)) return 0;
         k = DAY_LONG - 1;               /* no long names on this card */
@@ -224,10 +230,10 @@ struct log_reader
     void *ctx;
 };
 
-static void read_log(const char *path, const struct log_reader *r)
+static int read_log(const char *path, const struct log_reader *r)
 {
     char *buf = fos_port_alloc(LOG_MAX + 1);
-    if (!buf) return;
+    if (!buf) return 0;
     void *f = fos_port_open(path, 0);
     int n = f ? fos_port_read(f, buf, LOG_MAX) : 0;
     if (f) fos_port_close(f);
@@ -279,6 +285,7 @@ static void read_log(const char *path, const struct log_reader *r)
         line = next;
     }
     fos_port_free(buf);
+    return n > 0 && n < LOG_MAX;
 }
 
 /* every ROLL_nnn.TXT on the card: fn(ctx, card, folder, file name, roll number) */
@@ -373,11 +380,42 @@ static void scan_log(void *ctx, const char *card, const char *folder, const char
     read_log(path, &rd);
 }
 
+/* A deletion marker is committed only after the frame's files are gone.
+ * A short/failed write must not hide a surviving photograph. */
+static int deleted_marker(const char *dir, int frame)
+{
+    char path[96], bytes[6];
+    snprintf(path, sizeof(path), "%s/D%02d.TXT", dir, frame);
+    void *f = fos_port_open(path, 0);
+    if (!f) return 0;
+    int ok = fos_port_read(f, bytes, sizeof(bytes)) == sizeof(bytes) && !memcmp(bytes, "FOSD1\n", 6);
+    fos_port_close(f);
+    return ok;
+}
+
+static int roll_marker(int roll, int frame)
+{
+    const char *cards[2] = {roll_card(roll), other_card(roll_card(roll))};
+    char dir[64];
+    for (int c = 0; c < 2 && cards[c]; c++)
+    {
+        snprintf(dir, sizeof(dir), "%sML/DARKROOM/R%03d", cards[c], roll);
+        if (deleted_marker(dir, frame)) return 1;
+    }
+    return 0;
+}
+
 static int print_entry(void *ctx, const char *name, int is_dir)
 {
     struct fos_lab_roll *r = ctx;
     if (is_dir) return 1;
     if (!strcmp(name, "SHEET.BMP")) r->sheet = 1;
+    else if (name[0] == 'D' && strlen(name) == 7 && !strcmp(name + 3, ".TXT"))
+    {
+        int no = atoi(name + 1);
+        if (no >= 1 && no <= r->shot && no <= FOS_MAX_FRAMES && !r->removed[no - 1] && roll_marker(r->number, no))
+        { r->removed[no - 1] = 1; r->deleted++; }
+    }
     else if (name[0] == 'F' && strlen(name) == 7 && !strcmp(name + 3, ".BMP"))
     {
         int no = atoi(name + 1);
@@ -386,8 +424,13 @@ static int print_entry(void *ctx, const char *name, int is_dir)
     return 1;
 }
 
+static int marker_roll_entry(void *ctx, const char *name, int is_dir)
+{
+    return name[0] == 'D' ? print_entry(ctx, name, is_dir) : 1;
+}
+
 /* paths found for a roll, to act on once their folders have been read */
-struct found { int roll, n; char paths[8][64]; };
+struct found { int roll, n; char paths[8][64]; int overflow; };
 
 /* our folders in DCIM (not Canon's "100CANON"): which roll each holds, by
  * its tag file, and how many JPEGs; with found, the paths of those that
@@ -399,7 +442,8 @@ static int jpeg_file(void *ctx, const char *name, int is_dir)
     struct jpeg_scan *s = ctx;
     int len = (int) strlen(name);
     if (is_dir) return 1;
-    if (len == 11 && !strncmp(name, "ROLL", 4) && !strcmp(name + 7, ".TXT")) s->roll = atoi(name + 4);
+    if (len == 11 && !strncmp(name, "ROLL", 4) && !strcmp(name + 7, ".TXT"))
+        s->roll = s->roll == -1 ? atoi(name + 4) : -2;   /* multiple tags: ambiguous ownership */
     else if (len > 4 && !strcmp(name + len - 4, ".JPG")) s->count++;
     return 1;
 }
@@ -416,6 +460,8 @@ static int jpeg_folder(void *ctx, const char *name, int is_dir)
     for (int i = 0; i < s->n; i++)
         if (s->rolls[i].number == s->roll) s->rolls[i].jpegs += s->count;
     struct found *f = s->found;
+    if (f && s->roll == -2) f->overflow = 1;
+    if (f && s->roll == f->roll && (f->n >= 8 || strlen(dir) >= sizeof(f->paths[0]))) f->overflow = 1;
     if (f && s->roll == f->roll && f->n < 8 && strlen(dir) < sizeof(f->paths[0])) strcpy(f->paths[f->n++], dir);
     return 1;
 }
@@ -443,6 +489,12 @@ int fos_lab_scan(struct fos_lab_roll *rolls, int max)
                 snprintf(dir, sizeof(dir), "%sML/DARKROOM/R%03d", alt, r->number);
                 fos_port_list(dir, print_entry, r);
             }
+        }
+        const char *marker_card = other_card(card);
+        if (marker_card)
+        {
+            snprintf(dir, sizeof(dir), "%sML/DARKROOM/R%03d", marker_card, r->number);
+            fos_port_list(dir, marker_roll_entry, r); /* markers win even with prints on the first card */
         }
         r->in_camera = cam.loaded && cam.number == r->number;
     }
@@ -474,12 +526,21 @@ int fos_lab_scan(struct fos_lab_roll *rolls, int max)
 
 /* ---------------------------------------------------------------- one roll's frames */
 
-struct frames { struct fos_lab_frame *frames; int max, roll; const char *card; const char *folder; };
+struct frames { struct fos_lab_frame *frames; int max, roll; const char *card; const char *folder; int failed; };
+
+static int dcf_source_name(const char *name)
+{
+    if (strlen(name) != 12) return 0;
+    for (int i = 0; i < 8; i++)
+        if (i < 4 ? !((name[i] >= 'A' && name[i] <= 'Z') || (name[i] >= '0' && name[i] <= '9') || name[i] == '_')
+                  : name[i] < '0' || name[i] > '9') return 0;
+    return !strcmp(name + 8, ".CR2") || !strcmp(name + 8, ".JPG");
+}
 
 static void frames_frame(void *ctx, int no, const char *file, const char *when, const char *fstop)
 {
     struct frames *s = ctx;
-    if (no < 1 || no > s->max) return;
+    if (no < 1 || no > s->max || !dcf_source_name(file)) { s->failed = 1; return; }
     struct fos_lab_frame *f = &s->frames[no - 1];
     f->no = no;
     snprintf(f->cr2, sizeof(f->cr2), "%sDCIM/%s/%s", s->card, s->folder, file);
@@ -497,7 +558,7 @@ static void frames_log(void *ctx, const char *card, const char *folder, const ch
     s->card = card;
     s->folder = folder;
     struct log_reader rd = { 0, frames_frame, s };
-    read_log(path, &rd);
+    if (!read_log(path, &rd)) s->failed = 1;
 }
 
 /* A legacy journal can have a different prefix than its DCF file.
@@ -596,22 +657,46 @@ static void *open_frame_file(char *path)
     return 0;
 }
 
+struct marker_scan { const char *dir; uint8_t *removed; int max; };
+
+static int marker_entry(void *ctx, const char *name, int is_dir)
+{
+    struct marker_scan *s = ctx;
+    if (is_dir || strlen(name) != 7 || name[0] != 'D' || strcmp(name + 3, ".TXT") ||
+        name[1] < '0' || name[1] > '9' || name[2] < '0' || name[2] > '9') return 1;
+    int no = atoi(name + 1);
+    if (no >= 1 && no <= s->max && deleted_marker(s->dir, no)) s->removed[no - 1] = 1;
+    return 1;
+}
+
 int fos_lab_frames(int roll, struct fos_lab_frame *frames, int max)
 {
+    if (!frames || max < 1 || max > FOS_MAX_FRAMES) return -1;
     memset(frames, 0, sizeof(*frames) * max);
-    struct frames s = { frames, max, roll, 0, 0 };
+    struct frames s = { frames, max, roll, 0, 0, 0 };
     each_log(frames_log, &s);
+    if (s.failed) return -1;
     int n = 0;
     for (int i = 0; i < max; i++)
     {
         if (frames[i].no) n = i + 1;
         else frames[i].no = i + 1;
     }
+    uint8_t removed[FOS_MAX_FRAMES] = {0};
+    const char *cards[2] = {roll_card(roll), other_card(roll_card(roll))};
+    char dir[64];
+    for (int c = 0; c < 2 && cards[c]; c++)
+    {
+        snprintf(dir, sizeof(dir), "%sML/DARKROOM/R%03d", cards[c], roll);
+        struct marker_scan markers = {dir, removed, n < FOS_MAX_FRAMES ? n : FOS_MAX_FRAMES};
+        fos_port_list(dir, marker_entry, &markers);
+    }
     /* a frame whose file has gone (deleted on the camera, or never a RAW)
      * can't be developed */
     char seen[4] = "";                  /* the prefix of Canon's names on this roll */
     for (int i = 0; i < n; i++)
     {
+        if (i < FOS_MAX_FRAMES && removed[i]) { frames[i].deleted = frames[i].missing = 1; continue; }
         if (!frames[i].cr2[0]) { frames[i].missing = 1; continue; }
         void *f = open_frame_file(frames[i].cr2);
         if (f)
@@ -661,13 +746,9 @@ int fos_lab_frames(int roll, struct fos_lab_frame *frames, int max)
 
 /* ---------------------------------------------------------------- deleting a roll */
 
-/* A folder of ours: the roll's prints (ML/DARKROOM/Rnnn: Fnn.BMP, Fnn.ZOM, SHEET.BMP),
- * or its folder in DCIM (IMG_0102.JPG and the roll's tag, ROLL012.TXT).
- * Those files go, the tag last and only once the rest has (a folder that
- * couldn't all go is still the roll's, to delete again), then the folder
- * once nothing else is in it: one with anything left is never removed. The
- * names are taken first and removed after, not while the folder is read.
- * How many files couldn't be removed; a folder that stays adds to *dirs. */
+/* Remove only our named print files. Canon's file API does not reliably
+ * remove directories: empty directories stay and are not deletion errors.
+ * Unknown files, LUTs and other rolls are never swept. */
 #define SWEEP_MAX (2 * FOS_MAX_FRAMES + 2)       /* each frame's print and its zoom file, the sheet */
 struct sweep { int n; char names[SWEEP_MAX][13]; };
 
@@ -675,28 +756,157 @@ static int sweep_entry(void *ctx, const char *name, int is_dir)
 {
     struct sweep *s = ctx;
     int len = (int) strlen(name);
-    if (!is_dir && len >= 5 && len <= 12 && s->n < SWEEP_MAX
-        && (!strcmp(name + len - 4, ".BMP") || !strcmp(name + len - 4, ".JPG") || !strcmp(name + len - 4, ".ZOM")))
+    int frame = len == 7 && name[0] == 'F' && name[1] >= '0' && name[1] <= '9' && name[2] >= '0' && name[2] <= '9'
+              && atoi(name + 1) >= 1 && atoi(name + 1) <= FOS_MAX_FRAMES;
+    if (!is_dir && s->n < SWEEP_MAX && (!strcmp(name, "SHEET.BMP") ||
+        (frame && (!strcmp(name + 3, ".BMP") || !strcmp(name + 3, ".ZOM")))))
         memcpy(s->names[s->n++], name, len + 1);
     return 1;
 }
 
-static int sweep(const char *dir, int roll, int *dirs)
+static int sweep(const char *dir)
 {
     struct sweep s;
     s.n = 0;
     fos_port_list(dir, sweep_entry, &s);
     char path[160];
     int failed = 0;
-    for (int i = 0; i <= s.n; i++)
+    for (int i = 0; i < s.n; i++)
     {
-        if (i < s.n) snprintf(path, sizeof(path), "%s/%s", dir, s.names[i]);
-        else if (failed) break;
-        else snprintf(path, sizeof(path), "%s/ROLL%03d.TXT", dir, roll);      /* none in Rnnn: nothing to do */
+        snprintf(path, sizeof(path), "%s/%s", dir, s.names[i]);
         failed += remove_logged(path);
     }
-    int left = fos_port_list(dir, first_only, 0);       /* < 0: there was none */
-    *dirs += left ? left > 0 : remove_logged(dir);
+    return failed;
+}
+
+static void export_dirs(int roll, struct found *f)
+{
+    memset(f, 0, sizeof(*f));
+    f->roll = roll;
+    const char *cards[2] = {fos_port_card(), other_card(fos_port_card())};
+    struct jpeg_scan js = {0, 0, -1, 0, f, 0};
+    char dir[64];
+    for (int c = 0; c < 2 && cards[c]; c++)
+    {
+        js.card = cards[c];
+        snprintf(dir, sizeof(dir), "%sDCIM", cards[c]);
+        fos_port_list(dir, jpeg_folder, &js);
+    }
+}
+
+/* Never let a journal path escape its original DCF directory. */
+static int source_path_ok(const char *path)
+{
+    const char *card = card_of(path);
+    if (!card) return 0;
+    const char *p = path + strlen(card);
+    if (strncmp(p, "DCIM/", 5)) return 0;
+    p += 5;
+    if (strlen(p) != 21 || p[8] != '/' || p[0] < '1' || p[0] > '9') return 0;
+    if (p[1] < '0' || p[1] > '9' || p[2] < '0' || p[2] > '9') return 0;
+    for (int i = 0; i < 8; i++)
+        if (!((p[i] >= 'A' && p[i] <= 'Z') || (p[i] >= '0' && p[i] <= '9') || p[i] == '_')) return 0;
+    return dcf_source_name(p + 9);
+}
+
+/* In a tagged export directory, remove only a unique DCF JPEG matching
+ * this journal slot. Multiple prefixes are ambiguous and remain untouched. */
+static int delete_exports(const struct fos_lab_frame *frame, const struct found *dirs)
+{
+    if (frame->deleted || !frame->cr2[0]) return 0;
+    if (!source_path_ok(frame->cr2)) return 1;
+    char suffix[9], path[160];
+    const char *base = strrchr(frame->cr2, '/') + 1;
+    snprintf(suffix, sizeof(suffix), "%s", base + 4);
+    memcpy(suffix + 4, ".JPG", 5);
+    int failed = 0;
+    for (int i = 0; i < dirs->n; i++)
+    {
+        struct frame_name_match m = {.suffix = suffix};
+        fos_port_list(dirs->paths[i], frame_name_entry, &m);
+        if (m.count > 1) { failed++; fos_port_log("lab: ambiguous export names; kept"); continue; }
+        if (!m.count) continue;
+        snprintf(path, sizeof(path), "%s/%s", dirs->paths[i], m.name);
+        failed += remove_logged(path);
+    }
+    return failed;
+}
+
+static int delete_source(const struct fos_lab_frame *frame)
+{
+    if (frame->deleted || !frame->cr2[0]) return 0;
+    if (!source_path_ok(frame->cr2)) return 1;
+    if (frame->missing && !frame->jpeg)
+    {
+        /* Missing is not permission to guess an ambiguous custom prefix. */
+        char dir[64];
+        const char *base = strrchr(frame->cr2, '/');
+        fos_copy(dir, sizeof(dir), frame->cr2, base - frame->cr2);
+        struct frame_name_match m = {.suffix = base + 5};
+        fos_port_list(dir, frame_name_entry, &m);
+        if (m.count) fos_port_log("lab: unresolved source prefix; kept");
+        return m.count != 0;
+    }
+    int failed = remove_logged(frame->cr2);
+    if (!frame->jpeg)
+    {
+        char pair[64];
+        snprintf(pair, sizeof(pair), "%s", frame->cr2);
+        memcpy(pair + strlen(pair) - 4, ".JPG", 5);
+        failed += remove_logged(pair);
+    }
+    return failed;
+}
+
+static int delete_frame_prints(int roll, int frame, const struct fos_lab_frame *meta, const struct found *dirs)
+{
+    const char *cards[2] = {fos_port_card(), other_card(fos_port_card())};
+    char path[96];
+    int failed = delete_exports(meta, dirs);
+    for (int c = 0; c < 2 && cards[c]; c++)
+    {
+        snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d/F%02d.BMP", cards[c], roll, frame);
+        failed += remove_logged(path);
+        snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d/F%02d.ZOM", cards[c], roll, frame);
+        failed += remove_logged(path);
+        snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d/SHEET.BMP", cards[c], roll);
+        failed += remove_logged(path);       /* the cached sheet is now stale */
+    }
+    return failed;
+}
+
+int fos_lab_delete_frame(int roll, int frame, int whole, struct fos_lab_frame *frames)
+{
+    struct fos_roll cam;
+    fos_port_roll(&cam);
+    if (cam.loaded && cam.number == roll) return -1;
+    if (fos_port_abort() || frame < 1 || frame > FOS_MAX_FRAMES) return -2;
+    int n = fos_lab_frames(roll, frames, FOS_MAX_FRAMES);
+    if (frame > n) return -2;
+    struct found dirs;
+    export_dirs(roll, &dirs);
+    if (dirs.overflow) return -3;
+    struct fos_lab_frame *m = &frames[frame - 1];
+    int failed = delete_frame_prints(roll, frame, m, &dirs);
+    if (whole && !failed) failed += delete_source(m);
+    if (whole && !failed && !m->deleted)
+    {
+        if (fos_port_abort() || fos_lab_prepare(roll))
+        { fos_port_log("lab: deletion marker not written (abort or prepare failure)"); return 1; }
+        char path[64], dir[64];
+        fos_lab_print_path(path, sizeof(path), roll, frame);
+        char *base = strrchr(path, '/') + 1;
+        snprintf(base, sizeof(path) - (base - path), "D%02d.TXT", frame);
+        fos_copy(dir, sizeof(dir), path, base - path - 1);
+        void *f = fos_port_open(path, 1);
+        int ok = f && fos_port_write(f, "FOSD1\n", 6) == 6;
+        if (f) fos_port_close(f);
+        if (!ok || !deleted_marker(dir, frame))
+        { failed++; fos_port_log("lab: deletion marker write/verify failed"); }
+    }
+    char msg[96];
+    snprintf(msg, sizeof(msg), "lab: roll %03d frame %d: deleted %s, %d left", roll, frame, whole ? "source and prints" : "prints", failed);
+    fos_port_log(msg);
     return failed;
 }
 
@@ -704,6 +914,7 @@ static int sweep(const char *dir, int roll, int *dirs)
 static void logs_log(void *ctx, const char *card, const char *folder, const char *name, int number)
 {
     struct found *f = ctx;
+    if (number == f->roll && f->n >= 8) f->overflow = 1;
     if (number == f->roll && f->n < 8) snprintf(f->paths[f->n++], sizeof(f->paths[0]), "%sDCIM/%s/%s", card, folder, name);
 }
 
@@ -712,39 +923,45 @@ int fos_lab_delete(int roll, int whole, struct fos_lab_frame *frames)
     struct fos_roll cam;
     fos_port_roll(&cam);
     if (cam.loaded && cam.number == roll) return -1;           /* never the one in the camera */
-    /* its prints: the darkroom's, and its folder in DCIM, on either card */
+    if (fos_port_abort()) return -2;
     const char *cards[2] = { fos_port_card(), other_card(fos_port_card()) };
     struct found f;
-    f.roll = roll;
-    f.n = 0;
-    for (int c = 0; c < 2 && cards[c]; c++)
-        snprintf(f.paths[f.n++], sizeof(f.paths[0]), "%sML/DARKROOM/R%03d", cards[c], roll);
-    struct jpeg_scan js = { 0, 0, -1, 0, &f, 0 };
-    char dcim[64];
+    export_dirs(roll, &f);
+    if (f.overflow) return -3;
+    int n = fos_lab_frames(roll, frames, FOS_MAX_FRAMES);
+    if (n < 0) return -2;
+    int failed = 0;
+    char path[160];
     for (int c = 0; c < 2 && cards[c]; c++)
     {
-        js.card = cards[c];
-        snprintf(dcim, sizeof(dcim), "%sDCIM", cards[c]);
-        fos_port_list(dcim, jpeg_folder, &js);
+        snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d", cards[c], roll);
+        failed += sweep(path);
     }
-    int failed = 0, dirs = 0;
-    for (int i = 0; i < f.n; i++) failed += sweep(f.paths[i], roll, &dirs);
-    if (whole)
+    for (int i = 0; i < n; i++) failed += delete_exports(&frames[i], &f);
+    if (whole && !failed)
     {
-        /* its frames, only those its logs list, by the names the darkroom
-         * finds them by (Canon's _MG_ in Adobe RGB, a JPEG where it was
-         * shot as one, each in its folder across IMG_9999); then the logs,
-         * last and only once every file has gone (an empty folder that
-         * stays doesn't count), so a roll that couldn't all go is still
-         * there to delete again */
-        int n = fos_lab_frames(roll, frames, FOS_MAX_FRAMES);
         for (int i = 0; i < n; i++)
-            if (!frames[i].missing || frames[i].jpeg) failed += remove_logged(frames[i].cr2);
+            failed += delete_source(&frames[i]);
+        /* Keep deletion markers and tags until every owned file is gone.
+         * On failure the journals still describe a retryable roll. */
+        if (!failed)
+            for (int c = 0; c < 2 && cards[c]; c++)
+                for (int i = 1; i <= FOS_MAX_FRAMES; i++)
+                {
+                    snprintf(path, sizeof(path), "%sML/DARKROOM/R%03d/D%02d.TXT", cards[c], roll, i);
+                    failed += remove_logged(path);
+                }
+        if (!failed)
+            for (int i = 0; i < f.n; i++)
+            {
+                snprintf(path, sizeof(path), "%s/ROLL%03d.TXT", f.paths[i], roll);
+                failed += remove_logged(path);
+            }
         f.n = 0;
         if (!failed) each_log(logs_log, &f);
-        for (int i = 0; i < f.n; i++) failed += remove_logged(f.paths[i]);
+        if (f.overflow) failed++;
+        else for (int i = 0; i < f.n; i++) failed += remove_logged(f.paths[i]);
     }
-    failed += dirs;
     char msg[64];
     snprintf(msg, sizeof(msg), "lab: roll %03d: deleted %s, %d left", roll, whole ? "all" : "prints", failed);
     fos_port_log(msg);

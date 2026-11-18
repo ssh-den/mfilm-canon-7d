@@ -11,3 +11,6 @@ Use still photo mode and RAW or RAW+JPEG for the in-camera darkroom.
 Test the first roll at Small print size. Check that M-Film opens, ML's menu
 still works, and settings survive a restart. The camera test for this
 particular build is pending.
+
+Use expendable test shots to check Q > Actions in the prints viewer.
+The option to delete the source removes the original image from the card.

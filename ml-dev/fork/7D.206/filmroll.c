@@ -2246,8 +2246,22 @@ static void hud_step()
 
 /* while the film OS is up it gets the dial and the buttons; anything it
  * doesn't use goes on to Canon, like the ML menu does */
+static int ui_view_button(int raw)
+{
+    switch (raw)
+    {
+        case BGMT_PRESS_ZOOM_IN: return FK_ZOOM_IN;
+        case BGMT_PRESS_ZOOM_OUT: return FK_ZOOM_OUT;
+        case BGMT_UNPRESS_ZOOM_IN: return FK_RELEASE | FK_ZOOM_IN;
+        case BGMT_UNPRESS_ZOOM_OUT: return FK_RELEASE | FK_ZOOM_OUT;
+        default: return 0;
+    }
+}
+
 static int ui_key(struct event *event, int key)
 {
+    int view = ui_view_button(event->param);
+    if (view) { if (!(view & FK_RELEASE)) keyq_push(view); return 0; }
     int dir = 0;
     switch (key)
     {
@@ -2278,8 +2292,8 @@ static int ui_key(struct event *event, int key)
             return 0;
 
         case MODULE_KEY_PRESS_SET:
-        case MODULE_KEY_Q:
         case MODULE_KEY_JOY_CENTER:     keyq_push(FK_SET); return 0;
+        case MODULE_KEY_Q:              keyq_push(FK_ACTIONS); return 0;
         case MODULE_KEY_UNPRESS_SET:    return 0;
         case MODULE_KEY_MENU:           keyq_push(FK_MENU); return 0;
         case MODULE_KEY_INFO:           keyq_push(FK_INFO); return 0;
@@ -2376,7 +2390,7 @@ int handle_filmroll_keys(struct event *event)
     int key = module_translate_key(event->param, MODULE_KEY_PORTABLE);
     if (key == MODULE_KEY_PRESS_HALFSHUTTER || key == MODULE_KEY_PRESS_FULLSHUTTER ||
         key == MODULE_KEY_UNPRESS_HALFSHUTTER || key == MODULE_KEY_UNPRESS_FULLSHUTTER ||
-        key == MODULE_KEY_MENU || key == MODULE_KEY_PLAY || key == MODULE_KEY_TRASH || key == MODULE_KEY_Q)
+        key == MODULE_KEY_MENU || key == MODULE_KEY_PLAY || key == MODULE_KEY_TRASH || key == MODULE_KEY_Q || ui_view_button(event->param))
         dbg("nav: key raw %d portable %d, UI %d Canon mode %d job %d",
             event->param, key, ui_running, CURRENT_GUI_MODE, lens_info.job_state);
     if (key && key != MODULE_KEY_PRESS_HALFSHUTTER && key != MODULE_KEY_UNPRESS_HALFSHUTTER &&

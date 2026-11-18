@@ -175,6 +175,8 @@ struct fos_lab_roll
     int sheet;                  /* its contact sheet is there */
     int jpegs;                  /* JPEGs in its folder in DCIM */
     int in_camera;              /* still loaded: rewind it before developing */
+    int deleted;                /* intentional empty slots; numbering never changes */
+    uint8_t removed[FOS_MAX_FRAMES];
     char loaded[17];            /* "2026-10-22 17:45" */
     char last[17];              /* its last frame */
 };
@@ -185,6 +187,7 @@ struct fos_lab_frame
     char cr2[64];
     int missing;                /* the file isn't there (deleted, or shot as JPEG) */
     int jpeg;                   /* missing, and shot as JPEG: cr2 names its .JPG */
+    int deleted;                /* explicit Dnn.TXT marker, never redeveloped */
     char when[17];
     char fstop[6];
 };
@@ -204,5 +207,6 @@ int  fos_lab_dcim_dir(char *buf, int size, int roll, int film, const char *when)
  * the logs. frames: room for FOS_MAX_FRAMES to work in. Returns how many
  * files or folders couldn't be removed; -1 for the roll in the camera */
 int  fos_lab_delete(int roll, int whole, struct fos_lab_frame *frames);
+int  fos_lab_delete_frame(int roll, int frame, int whole, struct fos_lab_frame *frames);
 
 #endif

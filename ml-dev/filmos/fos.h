@@ -96,6 +96,7 @@ enum
     FK_HOME,                                /* what used to open the ML menu */
     FK_DIAL_L, FK_DIAL_R,                   /* the top dial of a camera that has two: the shelves on the film shelf,
                                                the same as turning the rear one anywhere else (#17) */
+    FK_ZOOM_IN, FK_ZOOM_OUT, FK_ACTIONS,
     FK_RELEASE = 0x100,                     /* or-ed in: a press above ended */
 };
 
