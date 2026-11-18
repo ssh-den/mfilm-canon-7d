@@ -98,6 +98,8 @@ def make_zip(card, output):
     for path in files:
         if path.suffix.lower() in forbidden:
             raise ValueError(f'Unexpected file in card files: {path.relative_to(card)}')
+        if path.suffix.lower() == '.mo' and b'Build user\0' in path.read_bytes():
+            raise ValueError(f'Build host metadata in {path.relative_to(card)}')
     sums = ''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(card).as_posix()}\n'
                    for path in files)
     with output.open('xb') as result, zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED) as archive:

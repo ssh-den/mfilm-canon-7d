@@ -1,0 +1,62 @@
+diff --git a/modules/readme2modulestrings.py b/modules/readme2modulestrings.py
+index c4042ec39..2c373256b 100755
+--- a/modules/readme2modulestrings.py
++++ b/modules/readme2modulestrings.py
+@@ -8,7 +8,7 @@ import shutil
+ from datetime import datetime
+ 
+ from align_string_proportional import word_wrap
+-from rbf_read import extent_func, rbf_init_font
++from rbf_read import rbf_init_font
+ 
+ # allow running from modules/some_module and
+ # modules/some_category/some_module
+@@ -153,47 +153,6 @@ for p in txt.strip("\n").split("\n")[2:]:
+ 
+ add_string(last_str, desc)
+ 
+-# allow running from some_module/
+-# or some_category/some_module/
+-LAST_CHANGE_PATH = "../last_change_info.sh"
+-if not os.path.isfile(LAST_CHANGE_PATH):
+-    LAST_CHANGE_PATH = "../" + LAST_CHANGE_PATH
+-# extract version info
+-# (prints the latest changeset that affected this module)
+-last_change_info = run("sh " + LAST_CHANGE_PATH)
+-
+-if len(last_change_info):
+-    last_change_date, last_changeset, author, commit_msg = last_change_info.split("\n")
+-    split = last_change_date.split(" ")
+-    seconds = float(split[0])
+-    last_change_date = datetime.utcfromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S UTC")
+-    
+-    # trim changeset to 7 chars, like Bitbucket does
+-    last_changeset = last_changeset[:7]
+-    
+-    # trim commit msg to 700px
+-    size = extent_func(commit_msg)[0]
+-    if size > 700:
+-        new_size = 0
+-        new_msg = ""
+-        for c in commit_msg:
+-            new_size += extent_func(c)[0]
+-            if new_size > 700:
+-                break
+-            new_msg += c
+-        commit_msg = new_msg + "..."
+-        
+-    add_string("Last update", "%s on %s by %s:\n%s" % (last_changeset, last_change_date, author, commit_msg))
+-
+-build_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+-
+-# echo called from python in Windows behaves differently, better to avoid it.
+-if sys.platform == 'win32':
+-    build_user = run('whoami').replace("\n", "") + "@" + run('hostname').replace("\n", "")
+-else:
+-    build_user = run("echo `whoami`@`hostname`")
+-
+-add_string("Build date", build_date)
+-add_string("Build user", build_user)
++add_string("Build date", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"))
+ 
+ declare_string_section()
