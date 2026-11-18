@@ -500,6 +500,21 @@ static void frames_log(void *ctx, const char *card, const char *folder, const ch
     read_log(path, &rd);
 }
 
+/* A legacy journal can have a different prefix than its DCF file.
+ * Try a unique name with the same number and extension in that folder. */
+struct frame_name_match { const char *suffix; char name[13]; int count; };
+
+static int frame_name_entry(void *ctx, const char *name, int is_dir)
+{
+    struct frame_name_match *m = ctx;
+    if (is_dir || strlen(name) != 12 || strcmp(name + 4, m->suffix)) return 1;
+    for (int i = 0; i < 4; i++)
+        if (!((name[i] >= 'A' && name[i] <= 'Z') ||
+              (name[i] >= '0' && name[i] <= '9') || name[i] == '_')) return 1;
+    memcpy(m->name, name, sizeof(m->name));
+    return ++m->count < 2;
+}
+
 /* open a frame's file (path: ...DCIM/100CANON/IMG_0012.CR2), by Canon's
  * name for it if that isn't the log's. The log's name is Magic Lantern's file
  * prefix and the file number, and Canon's name can differ:
@@ -526,7 +541,32 @@ static void *try_frame_prefixes(char *path)
         if (k && !memcmp(base, was, 4)) continue;       /* tried already */
         f = fos_port_open(path, 0);
     }
-    if (!f) memcpy(base, was, 4);
+    if (!f)
+    {
+        memcpy(base, was, 4);
+        for (int i = 4; i < 8; i++)
+            if (base[i] < '0' || base[i] > '9') return 0;
+        /* base stays in the caller's buffer; list only its parent folder. */
+        if (base == path) return 0;
+        struct frame_name_match m = { .suffix = base + 4 };
+        char saved = base[-1];
+        base[-1] = 0;
+        int listed = fos_port_list(path, frame_name_entry, &m);
+        base[-1] = saved;
+        if (listed >= 0 && m.count == 1)
+        {
+            memcpy(base, m.name, 4);
+            f = fos_port_open(path, 0);
+            if (f)
+            {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "lab: resolved frame %s", path);
+                fos_port_log(msg);
+            }
+            else memcpy(base, was, 4);
+        }
+        else if (m.count > 1) fos_port_log("lab: ambiguous frame number; keeping the logged name");
+    }
     return f;
 }
 

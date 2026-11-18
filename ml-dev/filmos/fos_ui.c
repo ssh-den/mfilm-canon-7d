@@ -752,7 +752,12 @@ void fos_ui_run(int open)
 {
     int t_open = fos_port_ms();
     if (!ui_alloc())
+    {
+        /* Allocation cleanup already ran: logging now does not compete
+         * with the partially allocated full-screen buffers. */
+        fos_port_log("film os: UI allocation failed (two full-screen buffers)");
         return;
+    }
     fos_port_roll(&ui_roll);
     quit = 0;
     leaving = 0;

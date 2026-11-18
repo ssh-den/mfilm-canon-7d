@@ -1,0 +1,4 @@
+#define lens_set_contrast picstyle_set_current_contrast
+#define lens_set_sharpness picstyle_set_current_sharpness
+#define lens_set_saturation picstyle_set_current_saturation
+#define lens_set_color_tone picstyle_set_current_color_tone

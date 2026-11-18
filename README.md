@@ -4,6 +4,9 @@
 
 # M-Film
 
+This fork adds an experimental build for the **Canon EOS 7D on firmware 2.0.6**.
+See [building and testing the 7D.206 card files](ml-dev/fork/7D.206/BUILD.md).
+
 **Your Canon, shot like film.**
 
 A film camera's interface for Canon cameras that run Magic Lantern.<br>

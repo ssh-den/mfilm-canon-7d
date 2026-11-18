@@ -377,8 +377,13 @@ static const struct item settings_items[] =
     { "Manual lens", IT_PAGE, PAGE_LENS, 0, 0, "The aperture of an adapted lens, which the camera can't read." },
     { "Advanced", IT_PAGE, PAGE_ADVANCED, 0, 0, "LEDs, wind lever, start up, screen colour, the debug log." },
     { "Canon menu", IT_ACTION, FA_CANON_MENU, 0, 0, "Leave and open the camera's own menu (format card, RAW...)." },
+#ifdef CONFIG_7D_206
+    { "Magic Lantern menu", IT_ACTION, FA_ML_MENU, 0, 0, "Leave M-Film and open the normal Magic Lantern settings." },
+#endif
     { "About", IT_INFO, -2, 0, 0, FOS_NAME " by HNGSeries " T_DOT " Barlow typeface by Jeremy Tribby (SIL OFL)" },
+#ifndef CONFIG_7D_206
     { "Support " FOS_NAME, IT_INFO, -3, 0, 0, "Scan the code with your phone to buy the developer a coffee." },
+#endif
 };
 
 static const struct item lens_items[] =
@@ -640,7 +645,7 @@ void page_key(int k)
             else if (it->kind == IT_ACTION)
             {
                 fos_port_action(it->setting, 0, 0);
-                if (it->setting == FA_CANON_MENU) ui_leave();
+                if (it->setting == FA_CANON_MENU || it->setting == FA_ML_MENU) ui_leave();
                 if (it->setting == FA_REAPPLY)
                     ui_toast(ui_roll.loaded ? "Film settings go in when you return to the camera" : "No film loaded");
             }

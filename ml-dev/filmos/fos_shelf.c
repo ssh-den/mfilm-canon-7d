@@ -51,6 +51,7 @@ static int list[MAX_LIST], nlist;   /* its films */
 static int group_at[NSHELVES];      /* the place last chosen on each shelf */
 static struct spring drop;          /* a new shelf's canisters dropping in, 1 -> 0 */
 static int drop_dir;
+static int drop_drawn;
 static int exp_sel;
 static struct spring exp_roll;      /* the exposures chip rolls to the new number */
 static int exp_prev;
@@ -293,6 +294,7 @@ void shelf_enter(int arg)
     for (int g = 0; g < NSHELVES; g++) group_at[g] = 0;
     group_at[group] = target;
     drop.x = 0; drop.v = 0;
+    drop_drawn = 0;
     pos.x = target; pos.v = 0;
     /* arriving from elsewhere: the shelf glides in from one film over */
     if (arg == 0) pos.x = target - 0.6f;
@@ -348,7 +350,7 @@ static void start_loading()
  * loading animation is up, else the band between status bar and hints */
 static void shelf_damage()
 {
-    if (loading || asking || sheet.x > 0 || sheet_drawn || sm_state != SM_OFF) ui_damage_all();
+    if (loading || asking || sheet.x > 0 || sheet_drawn || sm_state != SM_OFF || drop.x > 0.002f || drop_drawn) ui_damage_all();
     else ui_damage(MOVING_Y0, MOVING_Y1);
 }
 
@@ -612,7 +614,7 @@ int shelf_update(int dt)
         moving = 1;
         if (load_t > 1900) ui_leave();
     }
-    if (moving)
+    if (moving || drop_drawn)
         shelf_damage();
     return moving;
 }
@@ -931,7 +933,9 @@ void shelf_draw()
         draw_loading();
         return;
     }
-    if (ui_clobbered || sheet.x > 0 || sheet_drawn)
+    /* Vertical shelf motion can put a cap 90 px outside MOVING_Y0/Y1.
+     * Restore its whole previous footprint, including the settling frame. */
+    if (ui_clobbered || sheet.x > 0 || sheet_drawn || drop.x > 0.002f || drop_drawn)
     {
         ui_clobbered = 0;
         ui_damage_all();
@@ -948,4 +952,5 @@ void shelf_draw()
     draw_info();
     draw_sheet();
     sheet_drawn = sheet.x > 0;
+    drop_drawn = drop.x > 0.002f;
 }
