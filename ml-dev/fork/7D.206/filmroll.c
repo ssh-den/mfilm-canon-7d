@@ -990,12 +990,12 @@ static void film_ui_close()
     if (lv) bmp_off();
     SetGUIRequestMode(0);
     msleep(100);
-    /* back to the HUD or the plate: Canon's screen stays held, so it doesn't
-     * show between ours (#19, #64). hud_step gives it back if ours doesn't
-     * come; Canon's menu (AFTER_CANON_MENU) gets it now. */
+    /* Keep the buffer only when the shooting screen is ready for our HUD.
+     * Otherwise Canon must be able to finish switching dialogs and redraw. */
     canon_handover = 0;
-    if (HUD_HOLDS && hud_enabled && roll_loaded && DISPLAY_IS_ON && !is_movie_mode() &&
-        !(ui_after & (AFTER_CANON_MENU | AFTER_ML_MENU | AFTER_CANON_QUICK)))
+    if (HUD_HOLDS && hud_enabled && roll_loaded && DISPLAY_IS_ON &&
+        !(ui_after & (AFTER_CANON_MENU | AFTER_ML_MENU | AFTER_CANON_QUICK)) &&
+        CURRENT_GUI_MODE == 0 && !lens_info.job_state && shooting_screen())
     {
         film_hold_front_buffer();
         clrscr();
@@ -2126,10 +2126,14 @@ static void hud_step()
      * picture of the frame, over ours (#17). The film OS's pages take the
      * screen at once, and so does anything that isn't a blink. */
     static int canon_held = 0, gone_since = 0;
-    if (canon_handover && !ui_running)      /* once the film OS has gone, or the hold would be dropped below */
+    int handover = canon_handover && !ui_running;
+    if (handover)
     {
         canon_handover = 0;
         canon_held = 1;
+        /* film_ui_close cleared the buffer even if its address stayed the same. */
+        hud_all_stale();
+        hud_dirty = 1;
         dbg("hud: Canon's screen still held from the film OS");
     }
     if (visible && HUD_HOLDS)
@@ -2178,7 +2182,7 @@ static void hud_step()
          * done (#17). 20 s at most, should the camera never say it has finished. */
         int longest = saving ? 20000 : 4000;
         int unasked = visible && !HUD_HOLDS;        /* the EOS M's setting turned off */
-        if (ui_running || ml_menu_pending || gui_menu_shown() || canon_quick || asked || unasked ||
+        if (handover || ui_running || ml_menu_pending || gui_menu_shown() || canon_quick || asked || unasked ||
             (now - gone_since > 700 && !shooting) || now - gone_since > longest)
         {
             dbg("hud: Canon's screen given back after %d ms%s", now - gone_since,
