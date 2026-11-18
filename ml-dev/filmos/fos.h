@@ -140,7 +140,7 @@ enum { FOS_SIZE_S, FOS_SIZE_M, FOS_SIZE_L, FOS_SIZES };
 enum
 {
     FA_LOAD,            /* a = film, b = exposure choice */
-    FA_REWIND,          /* end the roll in the camera */
+    FA_REWIND,          /* end the roll; local 7D.206: a = expected roll and b = expected frames, or 0, 0 */
     FA_REAPPLY,         /* film settings again (after changing WB by hand) */
     FA_CANON_MENU,      /* leave and open Canon's menu */
     FA_BUSY,            /* a = 1: long work (developing) begins, keep the camera awake; 0: done */

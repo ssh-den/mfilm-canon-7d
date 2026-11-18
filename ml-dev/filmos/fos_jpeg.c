@@ -286,13 +286,16 @@ struct fos_jpeg
     struct jw w;
     int width, height, y;       /* y: rows written so far */
     int dc[3];
+    char path[];
 };
 
 struct fos_jpeg *fos_jpeg_begin(const char *path, int width, int height, int quality, const struct fos_jpeg_meta *meta)
 {
-    struct fos_jpeg *j = fos_port_alloc(sizeof(struct fos_jpeg));
+    int path_size = strlen(path) + 1;
+    struct fos_jpeg *j = fos_port_alloc(sizeof(*j) + path_size);
     if (!j) return 0;
     memset(j, 0, sizeof(*j));
+    memcpy(j->path, path, path_size);
     struct jw *w = &j->w;
     j->width = width;
     j->height = height;
@@ -416,6 +419,7 @@ int fos_jpeg_end(struct fos_jpeg *j)
     flush(w);
     fos_port_close(w->f);
     int ok = w->ok && j->y >= j->height;
+    if (!ok) fos_port_remove(j->path);
     fos_port_free(j);
     return ok;
 }

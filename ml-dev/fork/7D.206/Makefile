@@ -11,6 +11,9 @@ MODULE_CFLAGS += -I$(TOP_DIR)/platform/7D.206 -I$(TOP_DIR)/platform/7D.206/inclu
 include $(TOP_DIR)/modules/Makefile
 .DEFAULT_GOAL := $(BUILD_DIR)/module_complete
 
+# GCC 14 can keep fos_copy out of line under -Os.
+$(BUILD_DIR)/fos_dark.o: CFLAGS += -Wno-error=inline
+
 $(BUILD_DIR)/fos-libm.a: $(CORE_BUILD)/newlib-libm.a | $(BUILD_DIR)
 	$(OBJCOPY) --redefine-sym __errno=fos_errno $< $@
 

@@ -65,11 +65,22 @@ static int roll_index(int number)
  * (developing again skips the prints already made) */
 /* developed: every frame printed, and every print in DCIM as a JPEG */
 static int is_developed(const struct fos_lab_roll *r) { return r->sheet && r->developed >= r->shot && r->jpegs >= r->developed; }
-/* Basic mode: a finished roll still in the camera waits too; developing it finishes it (fos_port_action) */
-static int finished_in_camera(const struct fos_lab_roll *r) { return r->in_camera && !ui_realistic() && r->shot >= r->exposures; }
+static int can_develop_in_camera(const struct fos_lab_roll *r)
+{
+    if (!r->in_camera || ui_realistic()) return 0;
+#ifdef CONFIG_7D_206
+    return r->shot > 0;
+#else
+    return r->shot >= r->exposures;
+#endif
+}
 static int is_waiting(const struct fos_lab_roll *r)
 {
-    return !is_developed(r) && (!r->in_camera || finished_in_camera(r)) && r->shot > 0;
+    if (r->in_camera && !can_develop_in_camera(r)) return 0;
+#ifdef CONFIG_7D_206
+    if (r->in_camera) return 1; /* retry unloading even if a previous run wrote all prints */
+#endif
+    return r->shot > 0 && !is_developed(r);
 }
 static int has_prints(const struct fos_lab_roll *r) { return r->sheet || r->developed > 0; }
 
@@ -216,6 +227,9 @@ void dark_enter(int arg)
 
 void dark_queue_clear();
 void dark_queue_add(int roll);
+#ifdef CONFIG_7D_206
+static int roll_to_unload;
+#endif
 
 static void dark_develop()
 {
@@ -225,7 +239,14 @@ static void dark_develop()
     for (int i = nrolls - 1; i >= 0; i--)
         if (is_waiting(&rolls[i]) && (!nm || marked[i]))
         {
-            if (finished_in_camera(&rolls[i])) fos_port_action(FA_REWIND, 0, 0);    /* out of the camera first */
+            if (rolls[i].in_camera)
+            {
+#ifdef CONFIG_7D_206
+                roll_to_unload = rolls[i].number;
+#else
+                fos_port_action(FA_REWIND, 0, 0);
+#endif
+            }
             dark_queue_add(rolls[i].number);
         }
     ui_go(SCR_DEVELOP, 0, GO_FADE);
@@ -274,7 +295,7 @@ void dark_key(int k)
         case FK_SET: case FK_RIGHT: case FK_LEFT:
             if (!r) break;
             /* LEFT: Delete roll, never the one in the camera */
-            if (r->in_camera && (k == FK_LEFT || !finished_in_camera(r)))
+            if (r->in_camera && (k == FK_LEFT || !can_develop_in_camera(r)))
                 ui_toast(ui_realistic() ? "Still in the camera " T_MDASH " rewind it first"
                                         : "Still in the camera " T_MDASH " finish it on the Roll page first");
             else if (k == FK_LEFT) dk_ask = has_prints(r) || r->jpegs ? DEL_WHICH : DEL_WHOLE;   /* no prints: no choice */
@@ -351,7 +372,7 @@ static void dark_row(int i, int y)
     snprintf(b, sizeof(b), "Roll %03d " T_DOT " %d frame%s " T_DOT " %s", r->number, r->shot, r->shot == 1 ? "" : "s", short_date(when));
     fos_text(cv, &fos_font_sm, x + 42, y + 48, b, C_TEXT3, OPAQUE, 0);
     fcol c;
-    if (r->in_camera && !finished_in_camera(r)) { snprintf(b, sizeof(b), "IN CAMERA"); c = C_TEXT3; }
+    if (r->in_camera) { snprintf(b, sizeof(b), "IN CAMERA"); c = C_TEXT3; }
     else if (is_developed(r)) { snprintf(b, sizeof(b), "DEVELOPED"); c = C_TEXT3; }
     else if (r->developed) { snprintf(b, sizeof(b), "%d OF %d DEVELOPED", r->developed, r->shot); c = C_ACCENT; }
     else { snprintf(b, sizeof(b), "TO DEVELOP"); c = C_ACCENT; }
@@ -372,14 +393,26 @@ static void dark_sheet()
                                                      "half the sensor each way, more zoom" };
         char eta[32], alt[24];
         int nm = count_marked(), frames = 0, n = 0, size = cur_size(), exact;
+#ifdef CONFIG_7D_206
+        int unload = 0;
+#endif
         for (int i = 0; i < nrolls; i++)
             if (is_waiting(&rolls[i]) && (!nm || marked[i]))
             {
+#ifdef CONFIG_7D_206
+                if (rolls[i].in_camera) unload = rolls[i].number;
+#endif
                 n++;
                 frames += rolls[i].shot - (rolls[i].jpegs < rolls[i].developed ? rolls[i].jpegs : rolls[i].developed);
             }
         format_eta(eta, sizeof(eta), frames, ms_per_frame[size], 0);
-        if (fos_port_battery(&exact) <= 10) snprintf(t, sizeof(t), "The battery is low. Develop?");
+        int low_battery = fos_port_battery(&exact) <= 10;
+#ifdef CONFIG_7D_206
+        if (unload && low_battery) snprintf(t, sizeof(t), "Low battery. Develop & unload?");
+        else if (unload) snprintf(t, sizeof(t), "Develop & unload roll %03d?", unload);
+        else
+#endif
+        if (low_battery) snprintf(t, sizeof(t), "The battery is low. Develop?");
         else snprintf(t, sizeof(t), "Develop %d roll%s?", n, n == 1 ? "" : "s");
         snprintf(b, sizeof(b), "%d frame%s " T_DOT " %s: %s " T_DOT " %s", frames, frames == 1 ? "" : "s", names[size], what[size], eta);
         snprintf(alt, sizeof(alt), "Size: %s", names[size]);
@@ -498,6 +531,9 @@ static const char *cur_gone;            /* the roll's film, if it has left the s
 static struct fos_dev *dev;
 static int frame_t0;
 static int total_frames, done_frames, failed_frames, rolls_done;
+#ifdef CONFIG_7D_206
+static int failures_before_roll;
+#endif
 static int jpeg_frames;                 /* of the failed ones, shot as JPEG */
 static int finished, asking_stop;
 static struct spring stop_sheet;
@@ -522,7 +558,13 @@ static int bar_drawn, last_doing = -1, panel_t, batt_t;
 static char eta_drawn[64];
 static char last_error[72];             /* why the last frame that failed did */
 
-void dark_queue_clear() { nqueue = 0; }
+void dark_queue_clear()
+{
+    nqueue = 0;
+#ifdef CONFIG_7D_206
+    roll_to_unload = 0;
+#endif
+}
 void dark_queue_add(int roll) { if (dark_mem() && nqueue < MAX_ROLLS) queue[nqueue++] = roll; }
 
 static int file_exists(const char *path)
@@ -531,6 +573,42 @@ static int file_exists(const char *path)
     if (f) fos_port_close(f);
     return f != 0;
 }
+
+static void frame_jpeg_path(char *path, int size, const struct fos_lab_frame *frame)
+{
+    path[0] = 0;
+    if (!dcim_dir[0]) return;
+    const char *base = strrchr(frame->cr2, '/');
+    char name[9];
+    fos_copy(name, sizeof(name), base ? base + 1 : frame->cr2, 8);
+    snprintf(path, size, "%s/%s.JPG", dcim_dir, name);
+}
+
+#ifdef CONFIG_7D_206
+static void unload_developed_roll(int sheet_ok)
+{
+    if (cur_roll != roll_to_unload) return;
+    struct fos_roll camera;
+    fos_port_roll(&camera);
+    if (!camera.loaded || camera.number != cur_roll) return;
+
+    int complete = sheet_ok && failed_frames == failures_before_roll &&
+                   nframes > 0 && camera.shot == nframes;
+    for (int i = 0; complete && i < nframes; i++)
+    {
+        char jpeg[160];
+        const struct fos_lab_frame *frame = &dm->frames[i];
+        frame_jpeg_path(jpeg, sizeof(jpeg), frame);
+        complete = frame->no == i + 1 && !frame->missing && jpeg[0] && file_exists(jpeg);
+    }
+    if (complete) fos_port_action(FA_REWIND, cur_roll, nframes);
+    fos_port_roll(&camera);
+    if (!camera.loaded)
+        ui_toast("Roll unloaded");
+    else
+        ui_toast("Roll still loaded");
+}
+#endif
 
 /* the print's picture, small and grey, for the tray */
 static void load_tray_image(const char *path)
@@ -586,6 +664,9 @@ static void next_job()
         if (!roll_ready)
         {
             cur_roll = queue[qi];
+#ifdef CONFIG_7D_206
+            failures_before_roll = failed_frames;
+#endif
             int ri = roll_index(cur_roll);
             cur_film = ri >= 0 ? rolls[ri].film : 0;
             cur_gone = ri >= 0 && rolls[ri].gone[0] ? rolls[ri].gone : 0;
@@ -624,13 +705,8 @@ static void next_job()
             const struct fos_lab_frame *f = &dm->frames[fi++];
             fos_lab_print_path(path, sizeof(path), cur_roll, f->no);
             /* its JPEG in DCIM: IMG_0102.CR2 -> IMG_0102.JPG */
-            char jpeg[160] = "";
-            if (dcim_dir[0])
-            {
-                const char *base = strrchr(f->cr2, '/');
-                char name[9];
-                snprintf(jpeg, sizeof(jpeg), "%s/%s.JPG", dcim_dir, fos_copy(name, sizeof(name), base ? base + 1 : f->cr2, 8));
-            }
+            char jpeg[160];
+            frame_jpeg_path(jpeg, sizeof(jpeg), f);
             /* developed before (and, by this version, written to DCIM too) */
             if (file_exists(path) && (!jpeg[0] || f->missing || file_exists(jpeg))) continue;
             if (cur_gone)
@@ -640,7 +716,9 @@ static void next_job()
                 snprintf(msg, sizeof(msg), "darkroom: roll %03d frame %d: its film (%s) is not on the shelf any more", cur_roll,
                          f->no, cur_gone);
                 fos_port_log(msg);
-                snprintf(last_error, sizeof(last_error), "%.15s has left the shelf " T_MDASH " the RAWs are still on the card", cur_gone);
+                char key[16];
+                fos_copy(key, sizeof(key), cur_gone, 15);
+                snprintf(last_error, sizeof(last_error), "%s has left the shelf " T_MDASH " the RAWs are still on the card", key);
                 failed_frames++;
                 done_frames++;
                 continue;
@@ -658,7 +736,11 @@ static void next_job()
                 {
                     jpeg_frames++;
                     if (jpeg_frames == 1)
-                        snprintf(last_error, sizeof(last_error), "%.8s was shot as JPEG " T_MDASH " set Image quality to RAW", base);
+                    {
+                        char name[9];
+                        fos_copy(name, sizeof(name), base, 8);
+                        snprintf(last_error, sizeof(last_error), "%s was shot as JPEG " T_MDASH " set Image quality to RAW", name);
+                    }
                     else
                         snprintf(last_error, sizeof(last_error), "%d frames were shot as JPEG " T_MDASH " set Image quality to RAW",
                                  jpeg_frames);
@@ -704,7 +786,11 @@ static void next_job()
             pp[i] = dm->paths[i];
         }
         fos_lab_print_path(path, sizeof(path), cur_roll, 0);
-        if (!fos_dev_sheet(path, cur_film, pp, nframes)) fos_port_log("darkroom: can't write the contact sheet");
+        int sheet_ok = fos_dev_sheet(path, cur_film, pp, nframes);
+        if (!sheet_ok) fos_port_log("darkroom: can't write the contact sheet");
+#ifdef CONFIG_7D_206
+        unload_developed_roll(sheet_ok);
+#endif
         rolls_done++;
         qi++;
         roll_ready = 0;
@@ -1025,14 +1111,14 @@ static void text_lines_c(const struct fos_font *f, int cx, int y, int dy, int w,
     {
         cut = (int) (dash - s);
         next = cut + (int) strlen(" " T_MDASH " ");
-        snprintf(a, sizeof(a), "%.*s", cut, s);
+        fos_copy(a, sizeof(a), s, cut);
         if (fos_text_w(f, a, 0) > w) cut = -1;
     }
     if (cut < 0)
         for (int i = (int) strlen(s) - 1; i > 0; i--)
         {
             if (s[i] != ' ') continue;
-            snprintf(a, sizeof(a), "%.*s", i, s);
+            fos_copy(a, sizeof(a), s, i);
             if (fos_text_w(f, a, 0) <= w) { cut = i; next = i + 1; break; }
         }
     if (cut < 0)
@@ -1040,8 +1126,8 @@ static void text_lines_c(const struct fos_font *f, int cx, int y, int dy, int w,
         fos_text_c(cv, f, cx, y, s, c, OPAQUE, 0);
         return;
     }
-    snprintf(a, sizeof(a), "%.*s", cut, s);
-    snprintf(b, sizeof(b), "%s", s + next);
+    fos_copy(a, sizeof(a), s, cut);
+    fos_copy(b, sizeof(b), s + next, sizeof(b) - 1);
     if (b[0] >= 'a' && b[0] <= 'z') b[0] += 'A' - 'a';      /* a sentence of its own */
     fos_text_c(cv, f, cx, y, a, c, OPAQUE, 0);
     fos_text_c(cv, f, cx, y + dy, b, c, OPAQUE, 0);
@@ -1583,7 +1669,12 @@ void prints_draw()
         {
             const char *base = strrchr(m->cr2, '/');
             base = base ? base + 1 : m->cr2;
-            if (m->jpeg) snprintf(b, sizeof(b), "%.8s was shot as JPEG: set Image quality to RAW", base);
+            if (m->jpeg)
+            {
+                char name[9];
+                fos_copy(name, sizeof(name), base, 8);
+                snprintf(b, sizeof(b), "%s was shot as JPEG: set Image quality to RAW", name);
+            }
             else if (m->cr2[0]) snprintf(b, sizeof(b), "%s isn't on the card", base);
             else snprintf(b, sizeof(b), "No RAW file was logged for it");
             ui_photo_text(&fos_font_sm, 360, 274, b, 0, 1);

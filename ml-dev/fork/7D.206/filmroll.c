@@ -346,6 +346,9 @@ static void apply_film(int index)
     dbg("apply: style %x, contrast %d sharpness %d saturation %d tone %d, ISO raw %d",
         lens_info.raw_picstyle,picstyle_get_current_contrast(),picstyle_get_current_sharpness(),
         picstyle_get_current_saturation(),picstyle_get_current_color_tone(),lens_info.raw_iso);
+    dbg("apply: WB requested %d K GM %d BA %d; LV mode %d K %d, GM %d BA %d",
+        f->kelvin, f->wbs_gm, f->wbs_ba, lens_info.wb_mode, lens_info.kelvin,
+        lens_info.wbs_gm, lens_info.wbs_ba);
 }
 
 /* Exposure simulation (Viewfinder > Exposure simulation, #66). On, LiveView
@@ -573,12 +576,31 @@ static void record_frame(int file_number)
 /* log every new file number since the last poll */
 static void poll_frames()
 {
-    if (!roll_loaded)
+    static int busy_since = -1;
+    static int pending_file, logging_ms, job_at_counter;
+
+    /* Native movie mode remains available; a clip is not a RAW film frame. */
+    if (!roll_loaded || is_movie_mode())
+    {
+        if (roll_loaded) last_file_number = get_shooting_card()->file_number;
+        busy_since = -1;
+        pending_file = 0;
         return;
+    }
+
+    int job = lens_info.job_state;
+    int observed_at = get_ms_clock();
+    if (job && busy_since < 0) busy_since = observed_at;
+    if (!job)
+    {
+        if (pending_file)
+            dbg("capture: file %d job at counter %d, job busy sampled %d ms, ML frame logging %d ms",
+                pending_file, job_at_counter, busy_since < 0 ? -1 : observed_at - busy_since, logging_ms);
+        busy_since = -1;
+        pending_file = 0;
+    }
 
     int now = get_shooting_card()->file_number;
-    /* Native movie mode remains available; a clip is not a RAW film frame. */
-    if (is_movie_mode()) { last_file_number=now; return; }
     if (now == last_file_number)
         return;
 
@@ -612,6 +634,9 @@ static void poll_frames()
         }
         record_frame((prev + i - 1) % 9999 + 1);
     }
+    pending_file = now;
+    logging_ms = get_ms_clock() - last_shot_ms;
+    job_at_counter = job;
 }
 
 /* ---------------------------------------------------------------- the film OS host */
@@ -1498,7 +1523,10 @@ void fos_port_action(int action, int a, int b)
             ui_after |= AFTER_APPLY;
             break;
         case FA_REWIND:
-            rewind_roll();
+            if (!a || (roll_loaded && roll_number == a && frames_shot == b &&
+                       !fos_port_abort() && job_state_ready_to_take_pic() &&
+                       get_shooting_card()->file_number == last_file_number))
+                rewind_roll();
             break;
         case FA_BUSY:
             if (a && !dev_busy && !ui_power_held) powersave_prohibit();
